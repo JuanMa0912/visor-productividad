@@ -72,6 +72,7 @@ export const passInformeRowFilter = (
   filters: InformeGlobalFilters,
   sedeEmpresas: string[],
   itemsLow: string[],
+  itemProv?: number[],
 ): boolean => {
   if (filters.emp && sedeEmpresas[row[0]] !== filters.emp) return false;
   if (filters.sede !== "" && row[0] !== Number(filters.sede)) return false;
@@ -79,6 +80,9 @@ export const passInformeRowFilter = (
   if (filters.lin !== "" && row[2] !== Number(filters.lin)) return false;
   if (filters.sub !== "" && row[3] !== Number(filters.sub)) return false;
   if (filters.item !== "" && row[4] !== Number(filters.item)) return false;
+  if (filters.prov !== "" && (itemProv?.[row[4]] ?? 0) !== Number(filters.prov)) {
+    return false;
+  }
   if (filters.q && !itemsLow[row[4]]?.includes(filters.q)) return false;
   return true;
 };
@@ -235,6 +239,7 @@ export const hasActiveInformeFilters = (filters: InformeGlobalFilters) =>
       filters.lin ||
       filters.sub ||
       filters.item ||
+      filters.prov ||
       filters.q,
   );
 

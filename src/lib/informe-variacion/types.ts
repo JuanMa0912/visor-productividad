@@ -42,6 +42,12 @@ export type InformeVariacionPayload = {
   lins: string[];
   subs: string[];
   items: string[];
+  /** Codigo POS del ítem, paralelo a `items`. */
+  itemIds?: string[];
+  /** Nombres de proveedor comercial, índice 0 = sin proveedor. */
+  provs?: string[];
+  /** Índice de proveedor por ítem (`items[i]` → `provs[itemProv[i]]`). */
+  itemProv?: number[];
   ums: string[];
   rows: InformeCompactRow[];
   meta: {
@@ -72,6 +78,8 @@ export type InformeGlobalFilters = {
   lin: string;
   sub: string;
   item: string;
+  /** Índice en `payload.provs`. */
+  prov: string;
   q: string;
 };
 
@@ -89,5 +97,6 @@ export const EMPTY_INFORME_FILTERS: InformeGlobalFilters = {
   lin: "",
   sub: "",
   item: "",
+  prov: "",
   q: "",
 };

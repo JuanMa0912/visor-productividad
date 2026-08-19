@@ -7,6 +7,7 @@ import { LineChart } from "@mui/x-charts/LineChart";
 import { PieChart } from "@mui/x-charts/PieChart";
 import { getSedeOrderIndexForRawName } from "@/lib/shared/constants";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
+import { inasistenciaPersonasFromUnidades } from "@/lib/proveedores/inasistencia";
 import type {
   ProveedorVentasByDay,
   ProveedorVentasBySede,
@@ -26,6 +27,11 @@ const units = (value: number) =>
     maximumFractionDigits: 1,
   });
 
+const people = (value: number) =>
+  value.toLocaleString("es-CO", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 const shortLabel = (value: string, max = 20) =>
   value.length > max ? `${value.slice(0, max - 1)}…` : value;
@@ -42,6 +48,7 @@ type ProvSortKey =
   | "proveedor"
   | "codigo"
   | "unidades"
+  | "inasistencia"
   | "ventaNeta"
   | "ventaConImpuesto"
   | "sedesActivas";
@@ -240,6 +247,13 @@ export function ProveedoresVentasPanel() {
       if (provSort.key === "unidades") {
         return (a.unidades - b.unidades) * mul;
       }
+      if (provSort.key === "inasistencia") {
+        return (
+          (inasistenciaPersonasFromUnidades(a.unidades) -
+            inasistenciaPersonasFromUnidades(b.unidades)) *
+          mul
+        );
+      }
       if (provSort.key === "ventaConImpuesto") {
         return (a.ventaConImpuesto - b.ventaConImpuesto) * mul;
       }
@@ -361,7 +375,7 @@ export function ProveedoresVentasPanel() {
       ) : null}
 
       {metrics ? (
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
           <MetricCard
             label="Proveedores"
             value={String(metrics.proveedores)}
@@ -371,6 +385,11 @@ export function ProveedoresVentasPanel() {
             label="Unidades"
             value={units(metrics.unidadesTotal)}
             hint={`Últimos ${metrics.dias} días`}
+          />
+          <MetricCard
+            label="Inasistencia"
+            value={people(inasistenciaPersonasFromUnidades(metrics.unidadesTotal))}
+            hint="Personas-mes · und÷350÷7÷30"
           />
           <MetricCard
             label="Venta neta"
@@ -671,6 +690,14 @@ export function ProveedoresVentasPanel() {
                 />
                 <SortTh
                   sticky
+                  label="Inasistencia"
+                  active={provSort.key === "inasistencia"}
+                  dir={provSort.dir}
+                  align="right"
+                  onClick={() => toggleProvSort("inasistencia")}
+                />
+                <SortTh
+                  sticky
                   label="Venta neta"
                   active={provSort.key === "ventaNeta"}
                   dir={provSort.dir}
@@ -699,7 +726,7 @@ export function ProveedoresVentasPanel() {
               {loading && sortedRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-center text-slate-500"
                   >
                     Cargando ventas…
@@ -708,7 +735,7 @@ export function ProveedoresVentasPanel() {
               ) : sortedRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-center text-slate-500"
                   >
                     Sin ventas de proveedor en la ventana.
@@ -725,6 +752,9 @@ export function ProveedoresVentasPanel() {
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
                       {units(row.unidades)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">
+                      {people(inasistenciaPersonasFromUnidades(row.unidades))}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">
                       {money(row.ventaNeta)}

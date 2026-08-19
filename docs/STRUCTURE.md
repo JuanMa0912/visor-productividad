@@ -89,7 +89,7 @@ Codigo compartido sin UI de pagina.
 | `inventario/` | inventario por item y presets |
 | `analisis-inventario/` | días de inventario (DI und/valor), drill y heatmap |
 | `participacion-comercial/` | mix/participación sede↔línea por almacén |
-| `proveedores/` | visitas QR (`qr_*` por sede), ventas, productividad und/kg/tx, OIPV asistencia (admin) |
+| `proveedores/` | visitas QR (`qr_*` por sede), ventas, inasistencia (personas-mes = und÷350÷7÷30), productividad und/kg/tx, OIPV asistencia (admin) |
 | `productivity/` | ventana de fechas, cache disco y volumen de tarjetas Mix y Línea (`tx`/`und`/`kg`/`UND.Pollo`) |
 | `checklists/` | catálogo (bodega + punto de venta); 20 min; 1 vez al mes por sede; roles encargado/revisor/panel; cruce revisor vs encargado |
 | `excel-dian/` | conexiones por empresa, consulta y flag publico de exportacion |
@@ -123,7 +123,7 @@ Codigo compartido sin UI de pagina.
 | `productivity` | productividad por linea; 1ª carga ~40d + payload compacto; histórico diferido; cache memoria `productivity:full-v4`/disco (`volumeSchema=4`); tarjetas Mix y Línea muestran volumen (cajas=tx, industria=und menos visitas QR del día/sede, fruver/carnes/pollo=kg, asadero=UND.Pollo+horas+Unidades+horas) y conservan `$` para Excel/PDF |
 | `hourly-analysis` | analisis horario, cajeros, horas extra y presencia por franja |
 | `margenes` | margen por producto/factura/cliente/vendedor/sede (`mode=drill|fact-*|cliente|cliente-facturas|vendedor|vendedor-facturas|sede`) |
-| `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`, recortado en servidor por sedes/línea); si el mes aún no cierra en corte Excel, ofrece `mtd-N` = venta real 1→N vs MoM/YoY 1→N (sin proyectar); el warm matutino precarga también ese `mtd-N` para first paint vía `payload-std`; UI carga **solo el rango visible** (chips bajo demanda) y construye la matriz en chunks; ranking producto×sede (línea/sublínea/marca=categoría/producto) y resumen por empresa encima de la matriz |
+| `informe-variacion` | informe MoM/YoY; fuente preferida `margen_item_dia_roll` (+ snapshot `informe_variacion_payload_std` scope `*`, recortado en servidor por sedes/línea); si el mes aún no cierra en corte Excel, ofrece `mtd-N` = venta real 1→N vs MoM/YoY 1→N (sin proyectar); el warm matutino precarga también ese `mtd-N` para first paint vía `payload-std`; UI carga **solo el rango visible** (chips bajo demanda) y construye la matriz en chunks; filtro general (empresa/sede/marca=categoría/proveedor/línea) aplica a indicadores, ranking, matriz y explorador; ranking producto×sede (línea/sublínea/marca=categoría/proveedor/producto) y resumen por empresa encima de la matriz |
 | `rotacion` | rotacion e inventario con baja salida; capitulos A-B-C, criticos (D+0+S) y sobrestock (32+ / 50+ dias de inventario); filtro CAT (multi); restock muestra conteo S.inventario (sin verificar / seguimiento / surtido) |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
 | `rotacion/restock-fotos` | GET metadatos o foto base64; PUT foto de item restock ya surtido |
@@ -139,9 +139,10 @@ Codigo compartido sin UI de pagina.
 | `ordenes-compra` | tablero opt-in (`ordenes-compra` en `allowed_subdashboards`): OC incremental (pendiente/incompleta/vencida SLA 7d/cumplida); diario 08:00 dias nuevos + abiertas; cumplimiento `diaDesde`–`diaHasta` (día del documento, vencidas fuera; cerradas 100% + abiertas/incompletas por qty) |
 | `proveedores/ingreso` | público: meta/catálogo (`proveedor_tercero` filtrado por empresa de la sede del QR) + lookup/entrada/salida; entrada exige autorización habeas data (`autorizacionDatos`) |
 | `proveedores/visitas` | subtablero `proveedores`: QR asistencia (entrada/salida en tablas `qr_*` por sede) + listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
-| `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia`; gráficos (sede, top 10, día, concentración) |
+| `proveedores/ventas` | subtablero `proveedores`: rolling 30d (u otra ventana) desde `ventas_proveedor_dia`; gráficos (sede, top 10, día, concentración); inasistencia = und÷350÷7÷30 (personas-mes) en KPI/tabla/CSV |
 | `proveedores/productividad` | subtablero `proveedores`: `mode=board` (KPIs/sede/día + volumen÷horas pagadas, cache 45s) + `mode=proveedores` (ranking); industria=und, fruver/carnes=kg, cajas=tx; máx. 31 días |
 | `proveedores/oipv` | **solo admin**: cruce QR L–D + ventas + COGS mercancía (`margen_item_dia_roll` vía `proveedor_item`; no es cobro OIPV); columna **HL** = unidades ÷ 350; filtro `all|con_visita|visita_sin_venta|venta_sin_visita` |
+| UI `proveedores` pestaña Inasistencia | misma fuente que ventas; **inasistencia** = personas-mes (und÷350÷7÷30); **valor** = venta neta del proveedor |
 | `kardex/*` | detalle, lookups, resumenes y totales |
 | `jornada-extendida/meta`, `jornada-extendida/alex-report`, `jornada-extendida/tipos-horario` | metadata, reporte Alex y tipos de horario |
 | `ingresar-horarios/forms`, `ingresar-horarios/forms/[id]`, `ingresar-horarios/options`, `ingresar-horarios/people` | planillas y opciones |

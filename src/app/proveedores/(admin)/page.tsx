@@ -15,6 +15,7 @@ import type {
 import { ProveedorSedeQr } from "./proveedor-sede-qr";
 import { ProveedoresVentasPanel } from "./proveedores-ventas-panel";
 import { ProveedoresProductividadPanel } from "./proveedores-productividad-panel";
+import { ProveedoresInasistenciaPanel } from "./proveedores-inasistencia-panel";
 import { ProveedoresOipvPanel } from "./proveedores-oipv-panel";
 
 const toISODate = (date: Date) => {
@@ -92,7 +93,7 @@ export default function ProveedoresBoardPage() {
   const [metrics, setMetrics] = useState<ProveedorVisitasMetrics | null>(null);
   const [qrLinks, setQrLinks] = useState<QrLink[]>([]);
   const [tab, setTab] = useState<
-    "visitas" | "ventas" | "productividad" | "oipv"
+    "visitas" | "ventas" | "productividad" | "inasistencia" | "oipv"
   >("visitas");
 
   useEffect(() => {
@@ -218,9 +219,10 @@ export default function ProveedoresBoardPage() {
               Proveedores
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-              QR de asistencia (entrada/salida por sede), ventas por proveedor y
-              productividad por familia: unidades (industria), kilos (fruver y
-              carnes) y transacciones (cajas).
+              QR de asistencia (entrada/salida por sede), ventas por proveedor,
+              inasistencia (personas-mes = und÷350÷7÷30) y productividad por
+              familia: unidades (industria), kilos (fruver y carnes) y
+              transacciones (cajas).
             </p>
           </div>
         </div>
@@ -259,6 +261,17 @@ export default function ProveedoresBoardPage() {
           >
             Productividad
           </button>
+          <button
+            type="button"
+            onClick={() => setTab("inasistencia")}
+            className={`rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wide ${
+              tab === "inasistencia"
+                ? "bg-sky-700 text-white"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            Inasistencia
+          </button>
           {isAdmin ? (
             <button
               type="button"
@@ -276,6 +289,7 @@ export default function ProveedoresBoardPage() {
 
         {tab === "ventas" ? <ProveedoresVentasPanel /> : null}
         {tab === "productividad" ? <ProveedoresProductividadPanel /> : null}
+        {tab === "inasistencia" ? <ProveedoresInasistenciaPanel /> : null}
         {tab === "oipv" && isAdmin ? <ProveedoresOipvPanel /> : null}
 
         {tab === "visitas" ? (

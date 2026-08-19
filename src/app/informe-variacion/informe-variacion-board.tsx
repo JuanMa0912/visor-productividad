@@ -106,6 +106,7 @@ function InformeVariacionBoardReady({
         deferredFilters,
         prepared.sedeEmpresas,
         prepared.itemsLow,
+        prepared.itemProv,
       ),
     [deferredFilters, prepared],
   );
@@ -368,6 +369,15 @@ function InformeVariacionBoardReady({
         </span>
       </div>
 
+      <InformeFilters
+        payload={prepared}
+        filters={filters}
+        onChange={updateFilter}
+        onClear={clearFilters}
+        categoryScopeLocked={categoryScopeLocked}
+        lineScopeLocked={lineScopeLocked}
+      />
+
       <Section
         title="Indicadores del periodo"
         actions={<MetricToggle value={kpiMetric} onChange={setKpiMetric} />}
@@ -425,15 +435,6 @@ function InformeVariacionBoardReady({
           </p>
         ) : null}
       </Section>
-
-      <InformeFilters
-        payload={prepared}
-        filters={filters}
-        onChange={updateFilter}
-        onClear={clearFilters}
-        categoryScopeLocked={categoryScopeLocked}
-        lineScopeLocked={lineScopeLocked}
-      />
 
       <div
         className={cn(
@@ -892,16 +893,38 @@ function InformeFilters({
       .slice(0, 6000);
   }, [filters, payload]);
 
+  const provOptions = useMemo(() => {
+    const labels = payload.provs ?? [];
+    if (labels.length === 0) return [];
+    const allowed = new Set<number>();
+    for (const row of payload.rows) {
+      if (filters.emp && payload.sedeEmpresas[row[0]] !== filters.emp) continue;
+      if (filters.sede !== "" && row[0] !== Number(filters.sede)) continue;
+      if (filters.cat !== "" && row[1] !== Number(filters.cat)) continue;
+      if (filters.lin !== "" && row[2] !== Number(filters.lin)) continue;
+      if (filters.sub !== "" && row[3] !== Number(filters.sub)) continue;
+      if (filters.item !== "" && row[4] !== Number(filters.item)) continue;
+      if (filters.q && !payload.itemsLow[row[4]]?.includes(filters.q)) continue;
+      allowed.add(payload.itemProv?.[row[4]] ?? 0);
+    }
+    return [...allowed]
+      .sort((a, b) =>
+        (labels[a] ?? "").localeCompare(labels[b] ?? "", "es"),
+      );
+  }, [filters, payload]);
+
   const activeLabel =
     filters.item !== ""
       ? payload.items[Number(filters.item)]
-      : filters.sub !== ""
-        ? payload.subs[Number(filters.sub)]
-        : filters.lin !== ""
-          ? payload.lins[Number(filters.lin)]
-          : filters.cat !== ""
-            ? payload.cats[Number(filters.cat)]
-            : "";
+      : filters.prov !== ""
+        ? payload.provs?.[Number(filters.prov)]
+        : filters.sub !== ""
+          ? payload.subs[Number(filters.sub)]
+          : filters.lin !== ""
+            ? payload.lins[Number(filters.lin)]
+            : filters.cat !== ""
+              ? payload.cats[Number(filters.cat)]
+              : "";
 
   return (
     <section className="rounded-xl border border-l-4 border-l-blue-600 border-slate-200 bg-white p-4 shadow-sm">
@@ -934,21 +957,32 @@ function InformeFilters({
         />
         <FilterSelect
           value={filters.cat}
-          onChange={(value) => onChange({ cat: value, lin: "", sub: "", item: "" })}
-          placeholder="Todas las categorias"
+          onChange={(value) => onChange({ cat: value, lin: "", sub: "", item: "", prov: "" })}
+          placeholder="Todas las marcas"
           options={catOptions.map((value) => ({ value: String(value), label: payload.cats[value] }))}
           disabled={categoryScopeLocked}
         />
+        {payload.provs && payload.provs.length > 0 ? (
+          <FilterSelect
+            value={filters.prov}
+            onChange={(value) => onChange({ prov: value })}
+            placeholder="Todos los proveedores"
+            options={provOptions.map((value) => ({
+              value: String(value),
+              label: payload.provs?.[value] ?? `Proveedor ${value}`,
+            }))}
+          />
+        ) : null}
         <FilterSelect
           value={filters.lin}
-          onChange={(value) => onChange({ lin: value, sub: "", item: "" })}
+          onChange={(value) => onChange({ lin: value, sub: "", item: "", prov: "" })}
           placeholder="Todas las lineas"
           options={linOptions.map((value) => ({ value: String(value), label: payload.lins[value] }))}
           disabled={lineScopeLocked}
         />
         <FilterSelect
           value={filters.sub}
-          onChange={(value) => onChange({ sub: value, item: "" })}
+          onChange={(value) => onChange({ sub: value, item: "", prov: "" })}
           placeholder="Todas las sublineas"
           options={subOptions.map((value) => ({ value: String(value), label: payload.subs[value] }))}
         />

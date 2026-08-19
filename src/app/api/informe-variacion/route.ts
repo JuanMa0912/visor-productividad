@@ -29,6 +29,10 @@ import {
   getInformePayloadStdBundle,
 } from "@/lib/informe-variacion/payload-std-server";
 import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
+import {
+  ensureInformeProveedores,
+  ensureInformeProveedoresOnMap,
+} from "@/lib/informe-variacion/proveedores";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import {
   resolveDataSourceKind,
@@ -253,14 +257,21 @@ export async function GET(request: Request) {
             allowedSedeKeys,
             lineScope,
           );
+          const withProv = {
+            ...cleaned,
+            payloads: await ensureInformeProveedoresOnMap(
+              stdClient,
+              cleaned.payloads,
+            ),
+          };
           setCachedInformeMonthBundle(
             bundleKey,
-            cleaned,
+            withProv,
             allowedSedeKeys,
             lineScope.forcedMargenTipos, lineScope.forcedMargenLineas, lineScope.excludedMargenTipos,
           );
           return withSession(
-            NextResponse.json(cleaned, {
+            NextResponse.json(withProv, {
               headers: {
                 "Cache-Control": CACHE_CONTROL,
                 "X-Data-Source": "payload-std",
@@ -466,9 +477,10 @@ export async function GET(request: Request) {
           allowedSedeKeys,
           lineScope,
         );
-        setCachedInformePayload(cacheKey, cleaned);
+        const withProv = await ensureInformeProveedores(stdClient, cleaned);
+        setCachedInformePayload(cacheKey, withProv);
         return withSession(
-          NextResponse.json(cleaned, {
+          NextResponse.json(withProv, {
             headers: {
               "Cache-Control": CACHE_CONTROL,
               "X-Data-Source": "payload-std",

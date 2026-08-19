@@ -7,7 +7,7 @@ import { computeVariationPct } from "@/lib/informe-variacion/format";
 import { readInformeRowPeriodTripleForLevel } from "@/lib/informe-variacion/informe-metric-values";
 import { INFORME_EMPRESA_ORDER, type InformeMetric } from "@/lib/informe-variacion/types";
 
-export type InformeRankingDimension = "lin" | "sub" | "marca" | "item";
+export type InformeRankingDimension = "lin" | "sub" | "marca" | "prov" | "item";
 
 export const INFORME_RANKING_DIMENSIONS: Array<{
   id: InformeRankingDimension;
@@ -17,6 +17,7 @@ export const INFORME_RANKING_DIMENSIONS: Array<{
   { id: "lin", label: "Línea", keyIndex: 2 },
   { id: "sub", label: "Sublínea", keyIndex: 3 },
   { id: "marca", label: "Marca", keyIndex: 1 },
+  { id: "prov", label: "Proveedor", keyIndex: -1 },
   { id: "item", label: "Producto", keyIndex: 4 },
 ];
 
@@ -53,6 +54,7 @@ const labelsForDimension = (
   if (dimension === "lin") return payload.lins;
   if (dimension === "sub") return payload.subs;
   if (dimension === "marca") return payload.cats;
+  if (dimension === "prov") return payload.provs ?? ["(Sin proveedor)"];
   return payload.items;
 };
 
@@ -94,7 +96,8 @@ export const buildInformeRankingRows = ({
 
   for (const row of payload.rows) {
     if (!pass(row)) continue;
-    const key = row[keyIndex];
+    const key =
+      dimension === "prov" ? (payload.itemProv?.[row[4]] ?? 0) : row[keyIndex];
     let bucket = buckets.get(key);
     if (!bucket) {
       bucket = {
@@ -107,7 +110,11 @@ export const buildInformeRankingRows = ({
       row,
       metric,
       payload.metricCtx,
-      keyIndex === 4 ? 4 : keyIndex === 2 || keyIndex === 3 ? keyIndex : INFORME_UNIT_SUMMARY_KEY_INDEX,
+      keyIndex === 4
+        ? 4
+        : keyIndex === 2 || keyIndex === 3
+          ? keyIndex
+          : INFORME_UNIT_SUMMARY_KEY_INDEX,
     );
     addTriple(bucket.total, triple);
     addTriple(bucket.perSede[row[0]]!, triple);

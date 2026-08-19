@@ -48,7 +48,7 @@ type InformeMeta = {
  * v1 compartía clave entre usuarios; v2 namespaced; v3 fuerza wipe al desplegar
  * tras el incidente de payloads solo-Asaderos en sessionStorage.
  */
-const INFORME_SESSION_CACHE_BASE = "vp-informe-variacion:v4:";
+const INFORME_SESSION_CACHE_BASE = "vp-informe-variacion:v5:";
 const INFORME_FETCH_TIMEOUT_MS = 120_000;
 
 const sessionStoragePrefixForUser = (

@@ -118,12 +118,23 @@ export const filterInformePayloadForLineScope = (
     ]);
   }
 
+  const oldItemByNew = new Map<number, number>();
+  for (const [oldIdx, newIdx] of itemMap) oldItemByNew.set(newIdx, oldIdx);
+  const itemIds = payload.itemIds
+    ? items.map((_, newIdx) => payload.itemIds?.[oldItemByNew.get(newIdx) ?? -1] ?? "")
+    : undefined;
+  const itemProv = payload.itemProv
+    ? items.map((_, newIdx) => payload.itemProv?.[oldItemByNew.get(newIdx) ?? -1] ?? 0)
+    : undefined;
+
   return {
     ...payload,
     cats,
     lins,
     subs,
     items,
+    itemIds,
+    itemProv,
     ums,
     rows,
     meta: {

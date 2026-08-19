@@ -8,6 +8,10 @@ import {
   isProveedoresVentasSede,
   listVentasProveedorRolling,
 } from "@/lib/proveedores/ventas-repo";
+import {
+  inasistenciaHorasFromUnidades,
+  inasistenciaPersonasFromUnidades,
+} from "@/lib/proveedores/inasistencia";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 import { canAccessProveedoresBoard } from "@/lib/shared/special-role-features";
 
@@ -69,6 +73,8 @@ export async function GET(request: Request) {
         "proveedor",
         "codigo",
         "unidades",
+        "horas_surtido",
+        "inasistencia_personas",
         "venta_neta",
         "venta_con_impuesto",
         "items",
@@ -81,6 +87,8 @@ export async function GET(request: Request) {
             csvEscape(row.proveedor),
             csvEscape(row.codigo ?? ""),
             String(row.unidades),
+            String(inasistenciaHorasFromUnidades(row.unidades)),
+            String(inasistenciaPersonasFromUnidades(row.unidades)),
             String(row.ventaNeta),
             String(row.ventaConImpuesto),
             String(row.items),

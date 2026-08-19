@@ -23,6 +23,7 @@ import { informePayloadHasComparisonData } from "@/lib/informe-variacion/compari
 import { sortInformeSedeCatalog } from "@/lib/informe-variacion/sede-order";
 import { filterInformePayloadForLineScope } from "@/lib/informe-variacion/informe-line-scope";
 import { applyInformeDayRangeProjection } from "@/lib/informe-variacion/projection";
+import { attachInformeProveedores } from "@/lib/informe-variacion/proveedores";
 import { resolveUserLineCategoryScope } from "@/lib/shared/line-category-scope";
 import type { InformePeriods } from "@/lib/informe-variacion/types";
 import type {
@@ -360,6 +361,7 @@ export const buildInformeVariacionPayload = (
   const lins: string[] = [];
   const subs: string[] = [];
   const items: string[] = [];
+  const itemIds: string[] = [];
   const ums: string[] = [];
   const catMap = new Map<string, number>();
   const linMap = new Map<string, number>();
@@ -383,6 +385,7 @@ export const buildInformeVariacionPayload = (
     const linIdx = indexLabel(linMap, lins, linLabel);
     const subIdx = indexLabel(subMap, subs, subLabel);
     const itemIdx = indexLabel(itemMap, items, itemLabel);
+    if (!itemIds[itemIdx]) itemIds[itemIdx] = (row.id_item ?? "").trim();
     if (!ums[itemIdx]) ums[itemIdx] = (row.id_unidad ?? "").trim();
 
     const uCur = toNum(row.u_cur);
@@ -426,6 +429,7 @@ export const buildInformeVariacionPayload = (
     lins,
     subs,
     items,
+    itemIds,
     ums,
     rows,
     meta: {
@@ -479,8 +483,9 @@ export const loadInformeVariacionPayload = async (
     ),
   };
   const filtered = filterInformePayloadForLineScope(payload, lineScope);
+  const withProveedores = await attachInformeProveedores(client, filtered);
   return applyInformeDayRangeProjection(
-    attachDayRangeMeta(filtered, options.dayRange),
+    attachDayRangeMeta(withProveedores, options.dayRange),
     year,
     month,
     options.dayRange,

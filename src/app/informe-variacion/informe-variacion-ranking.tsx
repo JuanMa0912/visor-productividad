@@ -127,8 +127,9 @@ export function InformeRankingTable({
       </div>
       <p className="text-xs text-slate-500">
         Top 20 por {INFORME_RANKING_DIMENSIONS.find((item) => item.id === dimension)?.label.toLowerCase()}{" "}
-        × sede. Marca agrupa por categoría comercial del ítem. El proveedor de ficha no
-        está en este informe.
+        × sede. Marca usa la categoría comercial del ítem. Proveedor sale del
+        maestro de ficha (proveedor_item). Los filtros de marca y proveedor de
+        arriba aplican a este ranking y al resto de secciones.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] border-collapse text-sm">

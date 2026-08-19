@@ -26,7 +26,7 @@ export const buildInformeCacheKey = (
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
   const range = dayRangeId?.trim() || "1-eom";
-  return `informe:${year}:${month}:range=${range}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}`;
+  return `informe:v2:${year}:${month}:range=${range}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}`;
 };
 
 export const getCachedInformePayload = (
@@ -58,7 +58,7 @@ export const buildInformeBundleCacheKey = (
     allowedSedeKeys && allowedSedeKeys.length > 0
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
-  return `informe-bundle:${year}:${month}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}`;
+  return `informe-bundle:v2:${year}:${month}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}`;
 };
 
 export const getCachedInformeMonthBundle = (
