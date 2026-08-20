@@ -192,6 +192,15 @@ import {
 const isDinastiaRotationEmpresa = (empresa: string) =>
   canonicalizeEmpresaCode(empresa) === DINASTIA_EMPRESA_CODE;
 
+const resolveGraficoSedeOptions = <T extends { empresa: string }>(
+  options: T[],
+): T[] => {
+  const withoutDinastia = options.filter(
+    (option) => !isDinastiaRotationEmpresa(option.empresa),
+  );
+  return withoutDinastia.length > 0 ? withoutDinastia : options;
+};
+
 /** Espera breve antes de recargar filas tras cambiar sede/rango (ms). */
 const ROTACION_ROWS_RELOAD_DEBOUNCE_MS = 100;
 
@@ -240,7 +249,14 @@ export function RotacionPageInner() {
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
   const [boardView, setBoardView] = useState<"tabla" | "grafico">("tabla");
-  const graficoAllSedesOnceRef = useRef(false);
+  const [graficoRowsRaw, setGraficoRowsRaw] = useState<RotationRow[]>([]);
+  const [isLoadingGrafico, setIsLoadingGrafico] = useState(false);
+  const [graficoError, setGraficoError] = useState<string | null>(null);
+  const [graficoLoadedRange, setGraficoLoadedRange] = useState<DateRange | null>(
+    null,
+  );
+  const graficoRowsFetchKeyRef = useRef<string | null>(null);
+  const graficoLoadGenerationRef = useRef(0);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSavingAbcdConfig, setIsSavingAbcdConfig] = useState(false);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
@@ -1080,6 +1096,112 @@ export function RotacionPageInner() {
     });
   }, [filterCatalog.sedes]);
 
+  const graficoSedeSelections = useMemo(
+    () => resolveGraficoSedeOptions(allSedeOptions),
+    [allSedeOptions],
+  );
+
+  const loadGraficoRows = useCallback(async () => {
+    if (!dateRange.start || !dateRange.end) return false;
+    if (graficoSedeSelections.length === 0) return false;
+
+    if (
+      !isRangeWithinMaxMonths({
+        start: dateRange.start,
+        end: dateRange.end,
+      })
+    ) {
+      setGraficoRowsRaw([]);
+      setGraficoLoadedRange(null);
+      setGraficoError(ROTACION_MAX_RANGE_ERROR);
+      return false;
+    }
+
+    const rowsScopeKey = buildRotacionRowsKey({
+      start: dateRange.start,
+      end: dateRange.end,
+      empresas: graficoSedeSelections.map((sede) => sede.empresa),
+      sedeIds: graficoSedeSelections.map((sede) => sede.sedeId),
+      lineasN1: [],
+      categoriaKeys: [],
+    });
+    if (graficoRowsFetchKeyRef.current === rowsScopeKey) return true;
+
+    const generation = ++graficoLoadGenerationRef.current;
+    const rowsCacheKey = buildRotacionRowsCacheKey(
+      apiBasePath,
+      authUser?.id,
+      rowsScopeKey,
+    );
+    const isStale = () => generation !== graficoLoadGenerationRef.current;
+
+    setIsLoadingGrafico(true);
+    setGraficoError(null);
+
+    const applyGraficoRows = (result: RotacionRowsFetchResult) => {
+      if (isStale()) return;
+      setGraficoRowsRaw(normalizeRotationRows(result.rows));
+      setGraficoLoadedRange({
+        start: dateRange.start,
+        end: dateRange.end,
+      });
+      graficoRowsFetchKeyRef.current = rowsScopeKey;
+    };
+
+    try {
+      const cached = await readRotacionRowsIdbCache(rowsCacheKey);
+      if (isStale()) return false;
+      if (cached) {
+        applyGraficoRows(cached);
+        return true;
+      }
+
+      const fetched = await fetchRotacionRowsForCache({
+        apiBasePath,
+        cacheKey: rowsCacheKey,
+        start: dateRange.start,
+        end: dateRange.end,
+        sedeSelections: graficoSedeSelections.map((sede) => ({
+          empresa: sede.empresa,
+          sedeId: sede.sedeId,
+        })),
+        onUnauthorized: () => {
+          router.replace("/login");
+        },
+        onForbidden: (message) => {
+          if (!isStale()) setGraficoError(message);
+        },
+      });
+      if (isStale()) return false;
+      if (!fetched) return false;
+
+      applyGraficoRows(fetched);
+      void writeRotacionRowsIdbCache(rowsCacheKey, fetched);
+      return true;
+    } catch (err) {
+      if (isStale()) return false;
+      setGraficoError(
+        err instanceof Error ? err.message : "Error consultando rotacion.",
+      );
+      return false;
+    } finally {
+      if (!isStale()) setIsLoadingGrafico(false);
+    }
+  }, [
+    apiBasePath,
+    authUser?.id,
+    dateRange.end,
+    dateRange.start,
+    graficoSedeSelections,
+    router,
+  ]);
+
+  useEffect(() => {
+    if (boardView !== "grafico") return;
+    if (!ready || isLoadingLineCatalog) return;
+    void loadGraficoRows();
+  }, [boardView, isLoadingLineCatalog, loadGraficoRows, ready]);
+
   const sedeOptions = useMemo(() => {
     const scopedOptions =
       selectedCompanySet.size > 0
@@ -1879,11 +2001,11 @@ export function RotacionPageInner() {
   );
 
   const graficoRows = useMemo(() => {
-    const withoutDinastia = catalogFilteredRows.filter(
+    const withoutDinastia = graficoRowsRaw.filter(
       (row) => !isDinastiaRotationEmpresa(row.empresa),
     );
-    return withoutDinastia.length > 0 ? withoutDinastia : catalogFilteredRows;
-  }, [catalogFilteredRows]);
+    return withoutDinastia.length > 0 ? withoutDinastia : graficoRowsRaw;
+  }, [graficoRowsRaw]);
 
   const sortedRows = useMemo(
     () =>
@@ -2899,31 +3021,6 @@ export function RotacionPageInner() {
     [buildRotacionPdfDocument, dateRange.end, dateRange.start, exportRowCount],
   );
 
-  const openGraficoView = () => {
-    setBoardView("grafico");
-    const defaultSedes = allSedeOptions.filter(
-      (option) => !isDinastiaRotationEmpresa(option.empresa),
-    );
-    const targetSedes =
-      defaultSedes.length > 0 ? defaultSedes : allSedeOptions;
-    if (targetSedes.length === 0) {
-      graficoAllSedesOnceRef.current = true;
-      return;
-    }
-    const targetValues = targetSedes.map((option) => option.value);
-    const targetSet = new Set(targetValues);
-    const alreadyOnTarget =
-      selectedSedes.length === targetValues.length &&
-      selectedSedes.every((value) => targetSet.has(value));
-    graficoAllSedesOnceRef.current = true;
-    if (alreadyOnTarget) return;
-    skipSedeRestoreRef.current = true;
-    setSelectedSedes(targetValues);
-    setSelectedCompanies(
-      Array.from(new Set(targetSedes.map((option) => option.empresa))),
-    );
-  };
-
   if (!ready) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
@@ -3012,6 +3109,45 @@ export function RotacionPageInner() {
           </CardContent>
         </Card>
 
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setBoardView("tabla")}
+            className={cn(
+              "inline-flex h-9 items-center gap-2 rounded-full px-4 text-xs font-semibold uppercase tracking-[0.14em]",
+              boardView === "tabla"
+                ? "bg-amber-600 text-white shadow-sm"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-amber-50",
+            )}
+          >
+            <Table2 className="h-4 w-4" />
+            Tabla
+          </button>
+          <button
+            type="button"
+            onClick={() => setBoardView("grafico")}
+            className={cn(
+              "inline-flex h-9 items-center gap-2 rounded-full px-4 text-xs font-semibold uppercase tracking-[0.14em]",
+              boardView === "grafico"
+                ? "bg-amber-600 text-white shadow-sm"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-amber-50",
+            )}
+          >
+            <BarChart3 className="h-4 w-4" />
+            Grafico
+          </button>
+          {boardView === "grafico" ? (
+            <p className="text-xs text-slate-500">
+              Carga propia: D+0+S de Mercamio / Mercatodo / Merkmios, sin
+              Dinastia. No usa las sedes ni las lineas de la tabla.
+              {dateRange.start && dateRange.end
+                ? ` Rango: ${formatRangeLabel(dateRange)}.`
+                : null}
+            </p>
+          ) : null}
+        </div>
+
+        {boardView === "tabla" ? (
         <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.32fr)_minmax(320px,1fr)]">
           <Card
             id={ROTACION_TOUR_ANCHOR.filters}
@@ -3573,43 +3709,38 @@ export function RotacionPageInner() {
             </CardContent>
           </Card>
         </section>
+        ) : null}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setBoardView("tabla")}
-            className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-full px-4 text-xs font-semibold uppercase tracking-[0.14em]",
-              boardView === "tabla"
-                ? "bg-amber-600 text-white shadow-sm"
-                : "border border-slate-200 bg-white text-slate-600 hover:bg-amber-50",
-            )}
-          >
-            <Table2 className="h-4 w-4" />
-            Tabla
-          </button>
-          <button
-            type="button"
-            onClick={openGraficoView}
-            className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-full px-4 text-xs font-semibold uppercase tracking-[0.14em]",
-              boardView === "grafico"
-                ? "bg-amber-600 text-white shadow-sm"
-                : "border border-slate-200 bg-white text-slate-600 hover:bg-amber-50",
-            )}
-          >
-            <BarChart3 className="h-4 w-4" />
-            Grafico
-          </button>
-          {boardView === "grafico" ? (
-            <p className="text-xs text-slate-500">
-              Vista inicial: D+0+S de Mercamio / Mercatodo / Merkmios, sin
-              Dinastia. Si ya hay datos, el grafico sale de una.
-            </p>
-          ) : null}
-        </div>
-
-        {error ? (
+        {boardView === "grafico" ? (
+          graficoError ||
+          (graficoSedeSelections.length === 0 &&
+            !isLoadingLineCatalog &&
+            error) ? (
+            <Card className="border-dashed border-rose-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
+              <CardContent className="flex flex-col items-center px-6 py-12 text-center">
+                <div className="rounded-full bg-rose-100 p-4 text-rose-700">
+                  <AlertCircle className="h-7 w-7" />
+                </div>
+                <h2 className="mt-4 text-xl font-bold text-slate-900">
+                  No fue posible cargar el grafico
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                  {graficoError ?? error}
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <RotacionGraficoBoard
+              rows={graficoRows}
+              dateRange={graficoLoadedRange ?? dateRange}
+              abcdConfig={abcdConfig}
+              loading={
+                isLoadingGrafico ||
+                (isLoadingLineCatalog && graficoRows.length === 0)
+              }
+            />
+          )
+        ) : error ? (
           <Card className="border-dashed border-rose-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">
               <div className="rounded-full bg-rose-100 p-4 text-rose-700">
@@ -3623,7 +3754,7 @@ export function RotacionPageInner() {
               </p>
             </CardContent>
           </Card>
-        ) : isLoadingData && !hasLoadedItems && boardView !== "grafico" ? (
+        ) : isLoadingData && !hasLoadedItems ? (
           <Card className="border-dashed border-amber-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">
               <div
@@ -3694,13 +3825,6 @@ export function RotacionPageInner() {
               </p>
             </CardContent>
           </Card>
-        ) : boardView === "grafico" ? (
-          <RotacionGraficoBoard
-            rows={graficoRows}
-            dateRange={dateRange}
-            abcdConfig={abcdConfig}
-            loading={isLoadingData && graficoRows.length === 0}
-          />
         ) : rows.length === 0 ? (
           <Card className="border-dashed border-amber-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">

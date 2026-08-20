@@ -221,8 +221,8 @@ export function RotacionGraficoBoard({
             <CardDescription>
               Misma lectura del correo diario: criticos de manufactura por sede.
               Elige cortes (D, cero, restock; uno, dos o todos), busca y marca
-              items, o agrupa por sede / linea / sublinea / item. Empresa y sede
-              de arriba siguen filtrando este grafico.
+              items, o agrupa por sede / linea / sublinea / item. Esta vista
+              carga sus propias sedes y no usa los filtros de la tabla.
             </CardDescription>
           </div>
           <Button
