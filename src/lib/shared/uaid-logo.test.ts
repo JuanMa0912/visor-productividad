@@ -11,7 +11,7 @@ import {
 
 describe("uaid logo geometry", () => {
   it("pone la U en el núcleo y dos órbitas más finas alrededor", () => {
-    assert.match(UAID_LOGO_U_PATH, /^M11\.45 /);
+    assert.match(UAID_LOGO_U_PATH, /^M10\.05 /);
     assert.equal(UAID_LOGO_ORBITS.length, 2);
     assert.ok(UAID_LOGO_ORBIT_STROKE < UAID_LOGO_U_STROKE);
     const orbits = uaidLogoOrbitPaths();
@@ -24,8 +24,8 @@ describe("uaid logo geometry", () => {
     assert.equal(left.rx, right.rx);
     assert.equal(left.ry, right.ry);
     assert.equal(left.rotate, -right.rotate);
-    assert.ok(left.rx > left.ry * 2);
-    assert.ok(Math.abs(left.rotate) <= 22);
+    assert.ok(left.rx > left.ry * 3);
+    assert.ok(Math.abs(left.rotate) <= 16);
   });
 
   it("usa la paleta cielo-azul-índigo del login UAID", () => {

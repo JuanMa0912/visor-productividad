@@ -23,7 +23,11 @@ import {
   Truck,
 } from "lucide-react";
 import type { PortalSectionId } from "@/lib/shared/portal-sections";
-import { formatPortalUpdatedAt } from "@/lib/shared/portal-freshness";
+import {
+  formatPortalFreshnessTooltip,
+  formatPortalUpdatedAt,
+  type PortalFreshnessSource,
+} from "@/lib/shared/portal-freshness";
 
 export type ControlRoomModule = {
   id: string;
@@ -317,16 +321,24 @@ export function PortalControlRoom({
   const [selected, setSelected] = useState<PortalSectionId | null>(null);
   const [query, setQuery] = useState("");
   const [updatedAtLabel, setUpdatedAtLabel] = useState<string | null>(null);
+  const [updatedAtDetail, setUpdatedAtDetail] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
     void fetch("/api/portal/freshness", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) return;
-        const json = (await response.json()) as { updatedAt?: string | null };
+        const json = (await response.json()) as {
+          updatedAt?: string | null;
+          sources?: PortalFreshnessSource[];
+        };
         const iso = json.updatedAt?.trim() ?? "";
         const label = iso ? formatPortalUpdatedAt(iso) : "";
-        if (!cancelled && label) setUpdatedAtLabel(label);
+        const detail = formatPortalFreshnessTooltip(json.sources ?? []);
+        if (!cancelled && label) {
+          setUpdatedAtLabel(label);
+          setUpdatedAtDetail(detail);
+        }
       })
       .catch(() => {
         /* sin fecha si el snapshot no responde */
@@ -538,7 +550,13 @@ export function PortalControlRoom({
               <span className="text-emerald-700">Sistema en línea</span>
             </span>
             {updatedAtLabel ? (
-              <span className="font-mono normal-case tracking-[0.08em] text-slate-500">
+              <span
+                className="font-mono normal-case tracking-[0.08em] text-slate-500"
+                title={
+                  updatedAtDetail ||
+                  "Máximo entre rotación, informe de variación y horas"
+                }
+              >
                 Actualizado {updatedAtLabel}
               </span>
             ) : null}

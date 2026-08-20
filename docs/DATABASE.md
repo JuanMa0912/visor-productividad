@@ -233,6 +233,7 @@ Notas:
 - `src/lib/horarios/ocultar-cedulas.ts` excluye cedulas del analisis para no
   admins.
 - `asistencia_horas` no tiene DDL completo en el repo.
+- El sello **Actualizado** de `/secciones` toma el máximo entre `refreshed_at` de rotación/informe y el último `ANALYZE`/`VACUUM` de `asistencia_horas` (el sync de horas ahora hace `ANALYZE` al terminar el replace).
 
 ### 4.3 Margenes
 

@@ -133,7 +133,7 @@ Codigo compartido sin UI de pagina.
 | `rotacion/restock-fotos` | GET metadatos o foto base64; PUT foto de item restock ya surtido |
 | `checklists/runs` | GET/POST intento: 20 min, rol encargado/revisor, 1/mes por sede, guardar respuestas, foto obligatoria en P/NC, firma al finalizar, desbloqueo y borrado desde panel |
 | `checklists/panel` | GET listado mensual de sedes/puntajes/tiempo/responsable; `?runId=` detalle (respuestas, fotos, firma) para revisar; errores de esquema/SQL se devuelven en JSON |
-| `portal/freshness` | GET última `refreshed_at` de snapshots (rotación / informe); para el sello de `/secciones` |
+| `portal/freshness` | GET último corte: `refreshed_at` de rotación/informe + stats de `asistencia_horas`; sello de `/secciones` |
 | `rotacion/tutorial` | alias legacy de tutorial Rotación |
 | `ventas-x-item`, `ventas-x-item/v2` | ventas por item |
 | `inventario-x-item`, `inventario-x-item/presets` | inventario y presets; **sin Dinastía** (empresa/sedes excluidas en catálogo y consultas) |

@@ -519,6 +519,9 @@ COMMIT;
 SQL
     rm -f "$tmp"
     log "[$tbl] replace OK ($cnt filas; reemplazo por fechas presentes en local)"
+    if [[ "$tbl" == "asistencia_horas" ]]; then
+      "${GCP_PSQL[@]}" -c "ANALYZE public.asistencia_horas;" >/dev/null 2>&1 || true
+    fi
     return 0
   fi
 

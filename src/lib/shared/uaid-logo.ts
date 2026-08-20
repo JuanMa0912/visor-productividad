@@ -11,19 +11,20 @@ export const UAID_LOGO_GRADIENT = [
   { offset: "100%", color: "#4338ca" },
 ] as const;
 
-const UAID_LOGO_CENTER = { x: 16, y: 16.05 };
+/** Centro óptico de la U (no el del tile). */
+export const UAID_LOGO_CENTER = { x: 16, y: 16.85 };
 
-/** U compacta en el núcleo. */
+/** U más grande, centrada con las órbitas. */
 export const UAID_LOGO_U_PATH =
-  "M11.45 10.15V19.55C11.45 22.6 13.5 24.5 16 24.5C18.5 24.5 20.55 22.6 20.55 19.55V10.15";
+  "M10.05 7.5V20.05C10.05 23.85 12.75 26.15 16 26.15C19.25 26.15 21.95 23.85 21.95 20.05V7.5";
 
-export const UAID_LOGO_U_STROKE = 1.62;
+export const UAID_LOGO_U_STROKE = 1.82;
 
 export const UAID_LOGO_ORBIT_STROKE = 0.72;
 
 export const UAID_LOGO_ORBITS = [
-  { rx: 12.8, ry: 3.65, rotate: -20 },
-  { rx: 12.8, ry: 3.65, rotate: 20 },
+  { rx: 13.15, ry: 3.2, rotate: -15 },
+  { rx: 13.15, ry: 3.2, rotate: 15 },
 ] as const;
 
 const round = (value: number) => Number(value.toFixed(2));

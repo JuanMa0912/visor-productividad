@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { applySessionCookies, requireAuthSession } from "@/lib/auth";
 import { withPoolClient } from "@/lib/db";
-import { loadPortalUpdatedAt } from "@/lib/shared/portal-freshness";
+import { loadPortalFreshness } from "@/lib/shared/portal-freshness";
 
 export const dynamic = "force-dynamic";
 
@@ -14,19 +14,18 @@ export async function GET() {
   }
 
   try {
-    const updatedAt = await withPoolClient(
-      (client) => loadPortalUpdatedAt(client),
+    const freshness = await withPoolClient(
+      (client) => loadPortalFreshness(client),
       { statementTimeoutMs: 3_000 },
     );
-    const response = NextResponse.json(
-      { updatedAt },
-      { headers: { "Cache-Control": CACHE_CONTROL } },
-    );
+    const response = NextResponse.json(freshness, {
+      headers: { "Cache-Control": CACHE_CONTROL },
+    });
     return applySessionCookies(response, session);
   } catch (error) {
     console.error("[portal/freshness]", error);
     const response = NextResponse.json(
-      { updatedAt: null },
+      { updatedAt: null, sources: [] },
       { headers: { "Cache-Control": CACHE_CONTROL } },
     );
     return applySessionCookies(response, session);
