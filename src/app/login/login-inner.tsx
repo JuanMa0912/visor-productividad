@@ -95,8 +95,7 @@ export function LoginPageInner() {
         />
 
         <div className="relative w-full max-w-md">
-          <div className="relative z-10">
-          <div className="mb-6 grid grid-cols-2 gap-x-4 gap-y-4 rounded-2xl border border-white/70 bg-white/55 px-4 py-4 shadow-sm shadow-slate-900/5 backdrop-blur-sm">
+          <div className="login-card-ring login-card-ring--logos mb-6 grid grid-cols-2 gap-x-4 gap-y-4 rounded-2xl px-4 py-4 shadow-sm shadow-slate-900/5">
             {/* MercaMio primero. Mismo ancho en las 4 celdas. */}
             <div className="flex h-16 items-center justify-center sm:h-20">
               <MercamioLogo className="h-auto w-full max-w-[11.5rem] object-contain" />
@@ -112,54 +111,7 @@ export function LoginPageInner() {
             </div>
           </div>
 
-          <div className="relative">
-            <div className="login-aurora-waves" aria-hidden>
-              <svg
-                className="login-aurora-lines"
-                viewBox="0 0 440 560"
-                preserveAspectRatio="none"
-              >
-                <defs>
-                  <linearGradient id="loginAuroraStroke" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.15" />
-                    <stop offset="22%" stopColor="#38bdf8" stopOpacity="1" />
-                    <stop offset="55%" stopColor="#6366f1" stopOpacity="1" />
-                    <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.15" />
-                  </linearGradient>
-                  <linearGradient id="loginAuroraStrokeY" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.15" />
-                    <stop offset="35%" stopColor="#6366f1" stopOpacity="1" />
-                    <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.15" />
-                  </linearGradient>
-                </defs>
-                <g className="login-aurora-glow">
-                  <path d="M28 36 C 130 6, 310 6, 412 36" />
-                  <path
-                    d="M18 280 C 8 170, 8 390, 22 500"
-                    stroke="url(#loginAuroraStrokeY)"
-                  />
-                  <path d="M28 524 C 140 554, 300 554, 412 524" />
-                  <path
-                    d="M422 280 C 432 170, 432 390, 418 500"
-                    stroke="url(#loginAuroraStrokeY)"
-                  />
-                </g>
-                <g className="login-aurora-core">
-                  <path d="M28 36 C 130 6, 310 6, 412 36" />
-                  <path
-                    d="M18 280 C 8 170, 8 390, 22 500"
-                    stroke="url(#loginAuroraStrokeY)"
-                  />
-                  <path d="M28 524 C 140 554, 300 554, 412 524" />
-                  <path
-                    d="M422 280 C 432 170, 432 390, 418 500"
-                    stroke="url(#loginAuroraStrokeY)"
-                  />
-                </g>
-              </svg>
-            </div>
-
-          <div className="relative z-10 overflow-hidden rounded-3xl border border-white/80 bg-white/80 p-6 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.35)] backdrop-blur-md sm:p-8">
+          <div className="login-card-ring relative overflow-hidden rounded-3xl p-6 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.35)] sm:p-8">
             <p
               aria-hidden
               className="login-form-watermark pointer-events-none absolute -top-3 right-2 font-black uppercase select-none"
@@ -275,7 +227,6 @@ export function LoginPageInner() {
               actualizaciones.
             </p>
           </div>
-          </div>
 
           <p className="mt-6 text-center text-xs text-slate-500">
             ¿No puedes ingresar?{" "}
@@ -286,7 +237,6 @@ export function LoginPageInner() {
               Contacta al administrador
             </a>
           </p>
-          </div>
         </div>
       </main>
     </div>

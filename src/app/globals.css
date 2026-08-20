@@ -271,57 +271,23 @@ input.vp-sync-autofill:-webkit-autofill {
   background: #f4f6fa;
 }
 
-.login-aurora-waves {
-  position: absolute;
-  inset: -2.75rem -3rem;
-  z-index: 0;
-  pointer-events: none;
+.login-card-ring {
+  --login-card-fill: rgba(255, 255, 255, 0.86);
+  border: 1px solid transparent;
+  background-image:
+    linear-gradient(var(--login-card-fill), var(--login-card-fill)),
+    linear-gradient(
+      135deg,
+      rgba(56, 189, 248, 0.38),
+      rgba(37, 99, 235, 0.16),
+      rgba(129, 140, 248, 0.3)
+    );
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
 }
 
-.login-aurora-lines {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.login-aurora-lines path {
-  fill: none;
-  stroke: url(#loginAuroraStroke);
-  stroke-linecap: round;
-  animation: login-aurora-flow 14s ease-in-out infinite alternate;
-}
-
-.login-aurora-glow path {
-  stroke-width: 7;
-  filter: blur(5px);
-  opacity: 0.7;
-}
-
-.login-aurora-core path {
-  stroke-width: 2;
-  opacity: 0.95;
-}
-
-.login-aurora-lines g:nth-of-type(1) path:nth-of-type(2),
-.login-aurora-lines g:nth-of-type(2) path:nth-of-type(2) {
-  animation-duration: 18s;
-  animation-delay: -4s;
-}
-
-.login-aurora-lines g:nth-of-type(1) path:nth-of-type(3),
-.login-aurora-lines g:nth-of-type(2) path:nth-of-type(3) {
-  animation-duration: 12s;
-  animation-delay: -7s;
-}
-
-@keyframes login-aurora-flow {
-  from {
-    transform: translateY(-5px);
-  }
-  to {
-    transform: translateY(7px);
-  }
+.login-card-ring--logos {
+  --login-card-fill: rgba(255, 255, 255, 0.62);
 }
 
 .login-form-watermark {
@@ -437,8 +403,7 @@ input.vp-sync-autofill:-webkit-autofill {
 @media (prefers-reduced-motion: reduce) {
   .login-cinematic-preload,
   .login-form-cta::after,
-  .login-form-uaid-word,
-  .login-aurora-lines path {
+  .login-form-uaid-word {
     animation: none;
   }
 
