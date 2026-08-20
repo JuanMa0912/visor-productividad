@@ -1,7 +1,6 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
@@ -658,15 +657,6 @@ export default function CostosPage() {
         showSeccionesShortcut
       />
       <div className="mx-auto w-full max-w-[1400px] px-4 py-6 lg:px-6">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <Link
-            href="/venta"
-            className="text-sm font-semibold text-blue-700 underline-offset-4 hover:underline"
-          >
-            Volver a Venta
-          </Link>
-        </div>
-
         <h1 className="text-2xl font-black tracking-tight text-slate-900">
           Costos
         </h1>

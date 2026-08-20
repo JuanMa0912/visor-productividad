@@ -2582,7 +2582,7 @@ export default function Home() {
   // Render
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <AppTopBar backHref="/productividad" backLabel="Volver a productividad" />
+      <AppTopBar />
       <div className="px-3 pb-8 pt-4 sm:px-4 sm:pb-12 sm:pt-6 md:px-8 md:pb-16 md:pt-10">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 sm:gap-6 md:gap-10">
           <TopBar

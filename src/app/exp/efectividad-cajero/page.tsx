@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
-import Link from "next/link";
 import { ChevronDown, ChevronRight, FlaskConical } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
@@ -162,12 +161,6 @@ export default function ExpEfectividadCajeroPage() {
             <FlaskConical className="h-3.5 w-3.5" aria-hidden />
             Experimental · no está en el menú
           </span>
-          <Link
-            href="/secciones"
-            className="text-sm font-semibold text-blue-700 underline-offset-4 hover:underline"
-          >
-            Volver a secciones
-          </Link>
         </div>
 
         <h1 className="text-2xl font-black tracking-tight text-slate-900">

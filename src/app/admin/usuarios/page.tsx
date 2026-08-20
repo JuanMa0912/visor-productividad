@@ -63,6 +63,7 @@ import { normalizeKeySpaced } from "@/lib/shared/normalize";
 import { canonicalizeSedeKey } from "@/lib/horarios/visible-sedes";
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { PORTAL_APP_VERSION_LABEL as APP_VERSION_LABEL } from "@/lib/shared/uaid-brand";
 import { UserFormModal } from "@/app/admin/usuarios/user-form-modal";
 import type { UserFormState } from "@/app/admin/usuarios/user-form-validation";
 
@@ -204,7 +205,6 @@ const resolveUserPortalProfile = (user: UserRow): PortalProfileId =>
 
 const USERS_PAGE_SIZE = 10;
 const RECENT_ACCESS_LOGS_LIMIT = 6;
-const APP_VERSION_LABEL = "UAID V4.0";
 
 const AVATAR_STYLES = [
   { bg: "bg-teal-500", text: "text-white" },

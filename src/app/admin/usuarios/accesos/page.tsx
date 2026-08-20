@@ -49,9 +49,9 @@ import {
 import { formatUserAgentLabel } from "@/lib/parse-user-agent";
 import { getPathLabel } from "@/lib/shared/path-labels";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { PORTAL_APP_VERSION_LABEL as APP_VERSION_LABEL } from "@/lib/shared/uaid-brand";
 import { LoginLogDetailPanel } from "@/app/admin/usuarios/accesos/login-log-detail-panel";
 
-const APP_VERSION_LABEL = "UAID V4.0";
 const PAGE_SIZE = 15;
 const PRESENCE_REFRESH_MS = 20_000;
 const PRESENCE_ACTIVE_MAX_MS = 10 * 60_000;

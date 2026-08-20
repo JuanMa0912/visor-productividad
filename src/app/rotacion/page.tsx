@@ -6338,7 +6338,7 @@ export function RotacionPageInner() {
 export default function RotacionPage() {
   return (
     <RotacionViewConfigProvider config={ROTACION_LEGACY_VIEW}>
-      <AppTopBar backHref="/productividad" backLabel="Volver a productividad" />
+      <AppTopBar />
       <RotacionPageInner />
     </RotacionViewConfigProvider>
   );

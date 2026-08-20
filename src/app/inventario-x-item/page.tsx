@@ -2429,11 +2429,7 @@ export default function InventarioXItemPage() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(37,99,235,0.12),transparent_55%),linear-gradient(180deg,#f8fafc,#eef4ff)] text-foreground">
-      <AppTopBar
-        backHref="/venta"
-        backLabel="Volver a venta"
-        onTourHelp={startInventarioXItemTour}
-      />
+      <AppTopBar onTourHelp={startInventarioXItemTour} />
       <div className="px-4 py-10">
       <div className="mx-auto w-full max-w-7xl rounded-[30px] border border-slate-200/70 bg-white p-8 shadow-[0_30px_80px_-55px_rgba(15,23,42,0.45)]">
         <div className="relative overflow-hidden rounded-3xl border border-blue-200/70 bg-linear-to-br from-blue-100 via-blue-50/40 to-white p-6 shadow-[0_18px_35px_-30px_rgba(37,99,235,0.28)] before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-blue-500">

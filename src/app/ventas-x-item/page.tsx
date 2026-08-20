@@ -1235,11 +1235,7 @@ export default function VentasXItemPage() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(37,99,235,0.12),transparent_55%),linear-gradient(180deg,#f8fafc,#eef4ff)] text-foreground">
-      <AppTopBar
-        backHref="/venta"
-        backLabel="Volver a venta"
-        onTourHelp={startVentasXItemTour}
-      />
+      <AppTopBar onTourHelp={startVentasXItemTour} />
       <div className="px-4 py-8 lg:px-6">
         <div className="mx-auto w-full max-w-7xl">
           <div className="rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_28px_70px_-45px_rgba(15,23,42,0.4)]">

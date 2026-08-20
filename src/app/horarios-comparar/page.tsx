@@ -645,7 +645,7 @@ export default function HorariosCompararPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-foreground antialiased">
-      <AppTopBar backHref="/horario" backLabel="Volver a horarios" />
+      <AppTopBar />
 
       <main className="mx-auto max-w-[1400px] px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
         <section className="overflow-hidden rounded-3xl border border-slate-200/70 bg-white shadow-[0_20px_60px_-40px_rgba(15,23,42,0.18)]">

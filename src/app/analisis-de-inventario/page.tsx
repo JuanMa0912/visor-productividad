@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Layers } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
@@ -43,13 +42,7 @@ export default function AnalisisDeInventarioPage() {
         showSeccionesShortcut
       />
       <div className="mx-auto w-full max-w-[1400px] px-4 py-6 lg:px-6">
-        <Link
-          href="/venta"
-          className="inline-flex text-sm font-semibold text-blue-700 underline-offset-4 hover:underline"
-        >
-          Volver a Venta
-        </Link>
-        <div className="mt-4 mb-6 flex flex-wrap items-start gap-4">
+        <div className="mb-6 flex flex-wrap items-start gap-4">
           <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-teal-100 bg-teal-50 text-teal-700">
             <Layers className="h-5 w-5" aria-hidden />
           </span>

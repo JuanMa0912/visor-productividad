@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Download, Truck } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
@@ -207,13 +206,7 @@ export default function ProveedoresBoardPage() {
         showSeccionesShortcut
       />
       <div className="mx-auto w-full max-w-[1400px] px-4 py-6 lg:px-6">
-        <Link
-          href="/venta"
-          className="inline-flex text-sm font-semibold text-blue-700 underline-offset-4 hover:underline"
-        >
-          Volver a Venta
-        </Link>
-        <div className="mt-4 mb-6 flex flex-wrap items-start gap-4">
+        <div className="mb-6 flex flex-wrap items-start gap-4">
           <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-sky-700">
             <Truck className="h-5 w-5" aria-hidden />
           </span>

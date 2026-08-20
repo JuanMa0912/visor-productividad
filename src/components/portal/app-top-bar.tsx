@@ -3,13 +3,23 @@
 import { PortalBrandingHeader } from "./portal-branding-header";
 import { useAuth, usePermissions } from "@/lib/auth/auth-context";
 
+/**
+ * Hubs de sección. Los tableros ya se abren desde `/secciones`;
+ * no mostramos "Volver a venta/productividad/horario".
+ */
+const SECTION_HUB_HREFS = new Set([
+  "/venta",
+  "/productividad",
+  "/horario",
+  "/horarios",
+]);
+
 export type AppTopBarProps = {
   /**
-   * Si `false`, oculta tanto el boton "Volver a X" como el icono Grid2x2 que
-   * va a `/secciones`. Default true.
+   * Si `false`, oculta el icono Grid2x2 que va a `/secciones`. Default true.
    */
   showBack?: boolean;
-  /** Texto del boton "Volver a X". Default "Volver a secciones". */
+  /** Texto del boton "Volver a X" (solo flujos que no son hub de sección). */
   backLabel?: string;
   /** Ruta destino del boton "Volver a X". Default "/secciones". */
   backHref?: string;
@@ -36,7 +46,10 @@ export function AppTopBar({
   const { user, status } = useAuth();
   const { isAdmin, hasSpecialRole } = usePermissions();
 
-  const hasDistinctBack = showBack && backHref !== "/secciones";
+  const hasDistinctBack =
+    showBack &&
+    backHref !== "/secciones" &&
+    !SECTION_HUB_HREFS.has(backHref);
   const backProps = hasDistinctBack
     ? {
         // Navegacion completa: evita quedar atrapado en bundles SPA viejos
@@ -48,9 +61,7 @@ export function AppTopBar({
       }
     : {};
 
-  // Mientras la sesion carga, conservamos marca + navegacion (volver / secciones).
-  // Antes la barra quedaba vacia y en navegacion client-side desde un hub el boton
-  // "Volver a productividad" no aparecia hasta un refresh completo.
+  // Mientras la sesion carga, conservamos marca + atajo a secciones.
   if (status === "loading" || !user) {
     return (
       <PortalBrandingHeader

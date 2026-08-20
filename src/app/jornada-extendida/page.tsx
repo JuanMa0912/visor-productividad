@@ -1374,7 +1374,7 @@ export default function JornadaExtendidaPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-foreground">
-      <AppTopBar backHref="/horario" backLabel="Volver a horario" />
+      <AppTopBar />
       <div className="px-4 py-10">
       <div className="mx-auto w-full max-w-6xl">
         <div

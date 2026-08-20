@@ -688,7 +688,7 @@ export default function InformeVariacionPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-slate-50 to-amber-50/40">
-      <AppTopBar backHref="/productividad" backLabel="Volver a productividad" />
+      <AppTopBar />
       <main className="mx-auto max-w-[1480px] px-4 py-6 sm:px-6">
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 text-white">

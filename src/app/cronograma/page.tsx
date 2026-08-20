@@ -11,7 +11,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
-  ArrowLeft,
   CalendarDays,
   ChevronDown,
   ChevronRight,
@@ -1022,13 +1021,6 @@ export default function CronogramaPage() {
                 Abrir en Notion
               </a>
             )}
-            <Link
-              href="/secciones"
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Volver
-            </Link>
           </div>
         </header>
 

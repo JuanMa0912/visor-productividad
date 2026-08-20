@@ -2,10 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CalendarDays, Sparkles, Users } from "lucide-react";
+import { PORTAL_APP_VERSION } from "@/lib/shared/uaid-brand";
 import { UserMenu } from "./user-menu";
 import { PortalTourHelpButton } from "./portal-tour-help-button";
 
-export const PORTAL_APP_VERSION = "v4.0";
+export { PORTAL_APP_VERSION };
 
 export type PortalBrandingHeaderProps = {
   canAccessCronograma: boolean;

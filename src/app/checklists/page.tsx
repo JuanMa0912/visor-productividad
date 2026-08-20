@@ -106,22 +106,14 @@ export default function ChecklistsHubPage() {
           moduleCount={modules.length}
           density="compact"
           actions={
-            <div className="flex flex-wrap justify-end gap-2">
-              {canSeePanel ? (
-                <Link
-                  href="/checklists/panel"
-                  className="inline-flex h-9 items-center rounded-full border border-rose-200/80 bg-rose-50 px-3.5 text-[10px] font-bold uppercase tracking-[0.18em] text-rose-800 hover:bg-rose-100/90"
-                >
-                  Panel
-                </Link>
-              ) : null}
+            canSeePanel ? (
               <Link
-                href="/horario"
-                className="inline-flex h-9 items-center rounded-full border border-slate-200/90 bg-white px-3.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                href="/checklists/panel"
+                className="inline-flex h-9 items-center rounded-full border border-rose-200/80 bg-rose-50 px-3.5 text-[10px] font-bold uppercase tracking-[0.18em] text-rose-800 hover:bg-rose-100/90"
               >
-                ← Operación
+                Panel
               </Link>
-            </div>
+            ) : undefined
           }
         />
         <PortalHubModuleGrid

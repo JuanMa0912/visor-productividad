@@ -41,8 +41,8 @@ import type {
 } from "@/app/api/admin/uso-tableros/route";
 import { getPathLabel } from "@/lib/shared/path-labels";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { PORTAL_APP_VERSION_LABEL as APP_VERSION_LABEL } from "@/lib/shared/uaid-brand";
 
-const APP_VERSION_LABEL = "UAID V4.0";
 const SEDE_FILTER_OPTIONS = ["", ...BRANCH_LOCATIONS];
 
 type SortKey = "activeMinutes" | "uniqueUsers" | "observations";

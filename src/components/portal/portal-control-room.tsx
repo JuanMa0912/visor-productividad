@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
@@ -21,9 +21,9 @@ import {
   Tags,
   TrendingUp,
   Truck,
-  X,
 } from "lucide-react";
 import type { PortalSectionId } from "@/lib/shared/portal-sections";
+import { formatPortalUpdatedAt } from "@/lib/shared/portal-freshness";
 
 export type ControlRoomModule = {
   id: string;
@@ -316,19 +316,24 @@ export function PortalControlRoom({
 }: PortalControlRoomProps) {
   const [selected, setSelected] = useState<PortalSectionId | null>(null);
   const [query, setQuery] = useState("");
+  const [updatedAtLabel, setUpdatedAtLabel] = useState<string | null>(null);
 
-  const corteLabel = useMemo(() => {
-    try {
-      return new Intl.DateTimeFormat("es-CO", {
-        hour: "2-digit",
-        minute: "2-digit",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(new Date());
-    } catch {
-      return "";
-    }
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/portal/freshness", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const json = (await response.json()) as { updatedAt?: string | null };
+        const iso = json.updatedAt?.trim() ?? "";
+        const label = iso ? formatPortalUpdatedAt(iso) : "";
+        if (!cancelled && label) setUpdatedAtLabel(label);
+      })
+      .catch(() => {
+        /* sin fecha si el snapshot no responde */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const countBySection = useMemo(() => {
@@ -486,10 +491,10 @@ export function PortalControlRoom({
         </h3>
         {isSelected ? (
           <>
-            <p className="relative mt-2 line-clamp-3 text-xs leading-relaxed text-slate-500">
+            <p className="relative mt-2 hidden line-clamp-3 text-xs leading-relaxed text-slate-500 xl:block">
               {domain.description}
             </p>
-            <div className="relative mt-3">
+            <div className="relative mt-3 hidden xl:block">
               <Sparkline color={accent.stroke} />
             </div>
           </>
@@ -518,7 +523,11 @@ export function PortalControlRoom({
         className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-[radial-gradient(ellipse_at_top,rgba(14,165,233,0.08),transparent_60%)]"
       />
 
-      <div className="relative mx-auto w-full max-w-6xl px-4 py-5 pb-10 lg:px-6 lg:py-7">
+      <div
+        className={`relative mx-auto w-full px-4 py-5 pb-10 lg:px-6 lg:py-7 ${
+          activeDomain ? "max-w-[92rem]" : "max-w-6xl"
+        }`}
+      >
         <div className="mb-2 flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-4">
           <p className="text-[10px] font-semibold tracking-[0.28em] text-slate-500 uppercase">
             Portal / Secciones
@@ -528,20 +537,16 @@ export function PortalControlRoom({
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               <span className="text-emerald-700">Sistema en línea</span>
             </span>
-            {corteLabel ? (
-              <span className="font-mono normal-case tracking-[0.08em]">
-                Corte {corteLabel}
+            {updatedAtLabel ? (
+              <span className="font-mono normal-case tracking-[0.08em] text-slate-500">
+                Actualizado {updatedAtLabel}
               </span>
             ) : null}
           </div>
         </div>
 
         <div className="mb-8 max-w-3xl">
-          <p className="inline-flex items-center gap-2 text-[10px] font-semibold tracking-[0.22em] text-emerald-700 uppercase">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            {domains.length} dominios activos
-          </p>
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
+          <h1 className="bg-linear-to-r from-sky-500 via-blue-600 to-indigo-600 bg-clip-text text-4xl font-black tracking-tight text-transparent sm:text-5xl">
             Secciones
           </h1>
           <p
@@ -562,28 +567,22 @@ export function PortalControlRoom({
           ) : (
             <div
               key={activeDomain.id}
-              className="grid items-start gap-4 lg:grid-cols-[160px_minmax(0,1fr)_220px]"
+              className="grid items-start gap-3 xl:grid-cols-[108px_minmax(0,1fr)_148px] xl:gap-4"
             >
-              <aside className="order-2 flex flex-col gap-3 lg:order-1">
-                {leftDomains.length === 0 ? (
-                  <div className="uaid-dock-left hidden rounded-xl border border-dashed border-slate-200 p-3 text-center text-[10px] tracking-[0.14em] text-slate-500 uppercase lg:block">
-                    Borde izq.
-                  </div>
-                ) : (
-                  leftDomains.map((domain, index) =>
-                    renderDockCard(
-                      domain,
-                      domains.findIndex((entry) => entry.id === domain.id),
-                      "compact",
-                      "left",
-                      index * 70,
-                    ),
-                  )
+              <aside className="order-2 hidden flex-col gap-3 xl:order-1 xl:flex">
+                {leftDomains.map((domain, index) =>
+                  renderDockCard(
+                    domain,
+                    domains.findIndex((entry) => entry.id === domain.id),
+                    "compact",
+                    "left",
+                    index * 70,
+                  ),
                 )}
               </aside>
 
               <section
-                className={`uaid-panel-rise relative order-1 overflow-hidden rounded-xl border bg-white shadow-lg lg:order-2 ${ACCENT[activeDomain.accent].panelBorder}`}
+                className={`uaid-panel-rise relative order-1 min-w-0 overflow-hidden rounded-xl border bg-white shadow-lg xl:order-2 ${ACCENT[activeDomain.accent].panelBorder}`}
                 style={{
                   animationDelay: "80ms",
                   boxShadow: `0 0 0 1px ${ACCENT[activeDomain.accent].stroke}22, 0 20px 48px -28px ${ACCENT[activeDomain.accent].glow}`,
@@ -622,23 +621,6 @@ export function PortalControlRoom({
                         className="w-full rounded-lg border border-slate-200 bg-white py-2 pr-3 pl-9 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-sky-400 focus:ring-1 focus:ring-sky-200"
                       />
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => onOpen(activeDomain.hubHref)}
-                      className={`inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-[10px] font-bold tracking-[0.14em] uppercase ${ACCENT[activeDomain.accent].soft}`}
-                    >
-                      Hub
-                      <ArrowUpRight className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelected(null)}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
-                      title="Cerrar"
-                      aria-label="Cerrar dominio"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
                   </div>
                 </div>
 
@@ -647,7 +629,7 @@ export function PortalControlRoom({
                     No hay módulos con ese filtro.
                   </p>
                 ) : (
-                  <div className="grid gap-px bg-slate-100 sm:grid-cols-2">
+                  <div className="grid gap-px bg-slate-100 lg:grid-cols-2">
                     {activeModules.map((item, index) => {
                       const accent = ACCENT[item.section];
                       const Icon = item.icon;
@@ -656,30 +638,30 @@ export function PortalControlRoom({
                           key={item.id}
                           type="button"
                           onClick={() => onOpen(item.href)}
-                          className="uaid-module-in flex items-start gap-3 bg-white px-4 py-4 text-left transition-colors hover:bg-slate-50 sm:px-5"
+                          className="uaid-module-in flex items-start gap-4 bg-white px-5 py-5 text-left transition-colors hover:bg-slate-50 sm:px-6 sm:py-6"
                           style={{
                             animationDelay: `${160 + Math.min(index, 8) * 45}ms`,
                           }}
                         >
                           <span
-                            className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${accent.soft}`}
+                            className={`mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${accent.soft}`}
                           >
-                            <Icon className="h-4 w-4" />
+                            <Icon className="h-5 w-5" />
                           </span>
                           <span className="min-w-0 flex-1">
                             <span className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium text-slate-950">
+                              <span className="text-base font-semibold text-slate-950 sm:text-[17px]">
                                 {item.title}
                               </span>
-                              <span className="font-mono text-[9px] tracking-[0.14em] text-slate-500 uppercase">
+                              <span className="font-mono text-[10px] tracking-[0.14em] text-slate-500 uppercase">
                                 {item.badge}
                               </span>
                             </span>
-                            <span className="mt-1 block text-[13px] leading-snug text-slate-500">
+                            <span className="mt-1.5 block text-sm leading-relaxed text-slate-600">
                               {item.description}
                             </span>
                           </span>
-                          <ArrowUpRight className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
+                          <ArrowUpRight className="mt-1 h-5 w-5 shrink-0 text-slate-400" />
                         </button>
                       );
                     })}
@@ -687,7 +669,18 @@ export function PortalControlRoom({
                 )}
               </section>
 
-              <aside className="order-3 flex flex-col gap-3">
+              <aside className="order-3 grid grid-cols-3 gap-2 xl:hidden">
+                {domains.map((domain, index) =>
+                  renderDockCard(
+                    domain,
+                    index,
+                    domain.id === selected ? "selected" : "compact",
+                    "right",
+                    index * 40,
+                  ),
+                )}
+              </aside>
+              <aside className="order-3 hidden flex-col gap-3 xl:flex">
                 {renderDockCard(
                   activeDomain,
                   selectedIndex,

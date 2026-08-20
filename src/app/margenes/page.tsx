@@ -348,11 +348,7 @@ export default function MargenesPage() {
 
   return (
     <div className="flex min-h-dvh flex-col overflow-x-hidden overflow-y-auto bg-[#0d0f18] text-[#dde3f0] md:h-dvh md:overflow-hidden">
-      <AppTopBar
-        backHref="/productividad"
-        backLabel="Volver a productividad"
-        onTourHelp={startMargenesTour}
-      />
+      <AppTopBar onTourHelp={startMargenesTour} />
       {!boardReady ? (
         <div className="flex flex-1 items-center justify-center bg-[#0d0f18] text-[#dde3f0]">
           <Loader2 className="h-6 w-6 animate-spin text-[#4f8ef7]" />
