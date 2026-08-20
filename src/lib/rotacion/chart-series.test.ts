@@ -183,4 +183,54 @@ describe("tagRotacionCriticalRows + chart stacks", () => {
     assert.equal(stacks.length, 1);
     assert.equal(stacks[0]?.cero, 1);
   });
+
+  it("filtra por items y por corte D / 0 / S", () => {
+    const tagged = tagRotacionCriticalRows(
+      [
+        baseRow({
+          item: "cero-1",
+          totalSales: 0,
+          totalUnits: 0,
+          salesEffectiveDays: 0,
+          inventoryUnits: 3,
+          inventoryValue: 300,
+          openingInventoryUnits: 5,
+          rotation: 999999,
+          lastPurchaseDate: null,
+          lastMovementDate: "2026-04-01",
+        }),
+        baseRow({
+          item: "restock-1",
+          totalSales: 0,
+          totalUnits: 0,
+          salesEffectiveDays: 0,
+          inventoryUnits: 2,
+          inventoryValue: 200,
+          openingInventoryUnits: 0,
+          lastPurchaseDate: null,
+          lastMovementDate: "2026-06-01",
+        }),
+      ],
+      dateRange,
+      DEFAULT_ABCD_CONFIG,
+      ["manufactura"],
+    );
+    const onlyCeroItem = filterTaggedRowsForChart(
+      tagged,
+      ["manufactura"],
+      [],
+      { itemKeys: ["cero-1"] },
+    );
+    assert.equal(onlyCeroItem.length, 1);
+    assert.equal(onlyCeroItem[0]?.row.item, "cero-1");
+
+    const onlyRestock = filterTaggedRowsForChart(
+      tagged,
+      ["manufactura"],
+      [],
+      { buckets: ["restock"] },
+    );
+    assert.equal(onlyRestock.length, 1);
+    assert.equal(onlyRestock[0]?.bucket, "restock");
+  });
 });

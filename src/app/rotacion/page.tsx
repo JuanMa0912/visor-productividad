@@ -64,6 +64,10 @@ import {
 } from "@/lib/rotacion/source-tables";
 import { cn, formatDateLabel } from "@/lib/shared/utils";
 import {
+  DINASTIA_EMPRESA_CODE,
+  canonicalizeEmpresaCode,
+} from "@/lib/shared/data-tenant";
+import {
   FilterFieldLabel,
   FilterSelectField,
   SortableRotationHeader,
@@ -184,6 +188,9 @@ import {
   resolveRotacionPrefetchSedeValues,
   type RotacionRowsFetchResult,
 } from "./rotacion-prefetch";
+
+const isDinastiaRotationEmpresa = (empresa: string) =>
+  canonicalizeEmpresaCode(empresa) === DINASTIA_EMPRESA_CODE;
 
 /** Espera breve antes de recargar filas tras cambiar sede/rango (ms). */
 const ROTACION_ROWS_RELOAD_DEBOUNCE_MS = 100;
@@ -478,13 +485,6 @@ export function RotacionPageInner() {
         authUser?.id,
         rowsScopeKey,
       );
-
-      const scopeChanged =
-        rotacionRowsFetchKeyRef.current !== null &&
-        rotacionRowsFetchKeyRef.current !== rowsScopeKey;
-      if (scopeChanged) {
-        setHasLoadedItems(false);
-      }
 
       setIsLoadingData(true);
       setError(null);
@@ -1878,6 +1878,13 @@ export function RotacionPageInner() {
     ],
   );
 
+  const graficoRows = useMemo(() => {
+    const withoutDinastia = catalogFilteredRows.filter(
+      (row) => !isDinastiaRotationEmpresa(row.empresa),
+    );
+    return withoutDinastia.length > 0 ? withoutDinastia : catalogFilteredRows;
+  }, [catalogFilteredRows]);
+
   const sortedRows = useMemo(
     () =>
       sortRotationRows(
@@ -2894,14 +2901,26 @@ export function RotacionPageInner() {
 
   const openGraficoView = () => {
     setBoardView("grafico");
-    if (graficoAllSedesOnceRef.current) return;
+    const defaultSedes = allSedeOptions.filter(
+      (option) => !isDinastiaRotationEmpresa(option.empresa),
+    );
+    const targetSedes =
+      defaultSedes.length > 0 ? defaultSedes : allSedeOptions;
+    if (targetSedes.length === 0) {
+      graficoAllSedesOnceRef.current = true;
+      return;
+    }
+    const targetValues = targetSedes.map((option) => option.value);
+    const targetSet = new Set(targetValues);
+    const alreadyOnTarget =
+      selectedSedes.length === targetValues.length &&
+      selectedSedes.every((value) => targetSet.has(value));
     graficoAllSedesOnceRef.current = true;
-    if (allSedeOptions.length < 2) return;
-    if (selectedSedes.length === allSedeOptions.length) return;
+    if (alreadyOnTarget) return;
     skipSedeRestoreRef.current = true;
-    setSelectedSedes(allSedeOptions.map((option) => option.value));
+    setSelectedSedes(targetValues);
     setSelectedCompanies(
-      Array.from(new Set(allSedeOptions.map((option) => option.empresa))),
+      Array.from(new Set(targetSedes.map((option) => option.empresa))),
     );
   };
 
@@ -3584,7 +3603,8 @@ export function RotacionPageInner() {
           </button>
           {boardView === "grafico" ? (
             <p className="text-xs text-slate-500">
-              Vista inicial: resumen D+0+S de todas las sedes, como el correo.
+              Vista inicial: D+0+S de Mercamio / Mercatodo / Merkmios, sin
+              Dinastia. Si ya hay datos, el grafico sale de una.
             </p>
           ) : null}
         </div>
@@ -3603,7 +3623,7 @@ export function RotacionPageInner() {
               </p>
             </CardContent>
           </Card>
-        ) : isLoadingData && !hasLoadedItems ? (
+        ) : isLoadingData && !hasLoadedItems && boardView !== "grafico" ? (
           <Card className="border-dashed border-amber-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">
               <div
@@ -3676,10 +3696,10 @@ export function RotacionPageInner() {
           </Card>
         ) : boardView === "grafico" ? (
           <RotacionGraficoBoard
-            rows={catalogFilteredRows}
+            rows={graficoRows}
             dateRange={dateRange}
             abcdConfig={abcdConfig}
-            loading={isLoadingData}
+            loading={isLoadingData && graficoRows.length === 0}
           />
         ) : rows.length === 0 ? (
           <Card className="border-dashed border-amber-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">

@@ -26,6 +26,29 @@ export const ROTACION_CHART_BUCKETS: ReadonlyArray<{
   { id: "restock", label: "Restock S", color: "#d97706" },
 ];
 
+export type RotacionChartSlicePresetId =
+  | "todos"
+  | "demandaD"
+  | "cero"
+  | "restock"
+  | "d0"
+  | "ds"
+  | "ceroS";
+
+export const ROTACION_CHART_SLICE_PRESETS: ReadonlyArray<{
+  id: RotacionChartSlicePresetId;
+  label: string;
+  buckets: readonly RotacionCriticalBucket[];
+}> = [
+  { id: "todos", label: "Todos", buckets: ["demandaD", "cero", "restock"] },
+  { id: "demandaD", label: "Demanda D", buckets: ["demandaD"] },
+  { id: "cero", label: "Cero rotacion", buckets: ["cero"] },
+  { id: "restock", label: "Restock S", buckets: ["restock"] },
+  { id: "d0", label: "D + 0", buckets: ["demandaD", "cero"] },
+  { id: "ds", label: "D + S", buckets: ["demandaD", "restock"] },
+  { id: "ceroS", label: "0 + S", buckets: ["cero", "restock"] },
+];
+
 export type RotacionChartStackRow = {
   key: string;
   label: string;
@@ -85,10 +108,24 @@ export const filterTaggedRowsForChart = (
   tagged: readonly RotacionCriticalTaggedRow[],
   families: readonly RotacionCriticalDigestFamily[],
   focusTrail: readonly RotacionChartFocus[],
+  options?: {
+    itemKeys?: readonly string[];
+    buckets?: readonly RotacionCriticalBucket[];
+  },
 ): RotacionCriticalTaggedRow[] => {
   const familySet = new Set(families);
+  const itemSet =
+    options?.itemKeys && options.itemKeys.length > 0
+      ? new Set(options.itemKeys)
+      : null;
+  const bucketSet =
+    options?.buckets && options.buckets.length > 0 && options.buckets.length < 3
+      ? new Set(options.buckets)
+      : null;
   return tagged.filter((entry) => {
     if (!familySet.has(entry.family)) return false;
+    if (itemSet && !itemSet.has(entry.row.item)) return false;
+    if (bucketSet && !bucketSet.has(entry.bucket)) return false;
     for (const focus of focusTrail) {
       if (groupIdentity(entry.row, focus.groupBy).key !== focus.key) {
         return false;
@@ -96,6 +133,19 @@ export const filterTaggedRowsForChart = (
     }
     return true;
   });
+};
+
+export const buildRotacionChartItemOptions = (
+  tagged: readonly RotacionCriticalTaggedRow[],
+): Array<{ value: string; label: string }> => {
+  const labels = new Map<string, string>();
+  for (const entry of tagged) {
+    const { key, label } = groupIdentity(entry.row, "item");
+    if (!labels.has(key)) labels.set(key, label);
+  }
+  return [...labels.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], "es"))
+    .map(([value, label]) => ({ value, label }));
 };
 
 const compareStackRows = (

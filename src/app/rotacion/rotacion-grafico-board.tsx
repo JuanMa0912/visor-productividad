@@ -17,19 +17,23 @@ import {
   formatPriceWithoutSixZeros,
   LINEA_N1_FAMILY_LABELS,
 } from "@/app/rotacion/rotacion-preamble";
+import { DiMultiSelect } from "@/app/analisis-de-inventario/di-multi-select";
 import {
   tagRotacionCriticalRows,
   type RotacionCriticalDigestFamily,
 } from "@/lib/rotacion/critical-digest";
 import {
+  buildRotacionChartItemOptions,
   buildRotacionChartStacks,
   filterTaggedRowsForChart,
   nextChartGroupBy,
   ROTACION_CHART_BUCKETS,
+  ROTACION_CHART_SLICE_PRESETS,
   sumRotacionChartStacks,
   type RotacionChartFocus,
   type RotacionChartGroupBy,
   type RotacionChartMetric,
+  type RotacionChartSlicePresetId,
 } from "@/lib/rotacion/chart-series";
 
 const GROUP_OPTIONS: Array<{ id: RotacionChartGroupBy; label: string }> = [
@@ -112,11 +116,20 @@ export function RotacionGraficoBoard({
     RotacionCriticalDigestFamily | "ambas"
   >("manufactura");
   const [focusTrail, setFocusTrail] = useState<RotacionChartFocus[]>([]);
-  const [query, setQuery] = useState("");
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [slicePreset, setSlicePreset] =
+    useState<RotacionChartSlicePresetId>("todos");
 
   const families = useMemo<RotacionCriticalDigestFamily[]>(
     () => (familyMode === "ambas" ? ["manufactura", "perecederos"] : [familyMode]),
     [familyMode],
+  );
+
+  const sliceBuckets = useMemo(
+    () =>
+      ROTACION_CHART_SLICE_PRESETS.find((preset) => preset.id === slicePreset)
+        ?.buckets ?? (["demandaD", "cero", "restock"] as const),
+    [slicePreset],
   );
 
   const tagged = useMemo(
@@ -124,22 +137,43 @@ export function RotacionGraficoBoard({
     [abcdConfig, dateRange, families, rows],
   );
 
-  const scoped = useMemo(
+  const scopedBeforeItems = useMemo(
     () => filterTaggedRowsForChart(tagged, families, focusTrail),
     [families, focusTrail, tagged],
   );
 
-  const stacks = useMemo(() => {
-    const built = buildRotacionChartStacks(
-      scoped,
-      groupBy,
-      metric,
-      groupBy === "sede" ? 0 : 18,
-    );
-    const q = query.trim().toLowerCase();
-    if (!q) return built;
-    return built.filter((row) => row.label.toLowerCase().includes(q));
-  }, [groupBy, metric, query, scoped]);
+  const itemOptions = useMemo(
+    () => buildRotacionChartItemOptions(scopedBeforeItems),
+    [scopedBeforeItems],
+  );
+
+  const scoped = useMemo(
+    () =>
+      filterTaggedRowsForChart(tagged, families, focusTrail, {
+        itemKeys: selectedItems,
+        buckets: sliceBuckets,
+      }),
+    [families, focusTrail, selectedItems, sliceBuckets, tagged],
+  );
+
+  const visibleBuckets = useMemo(
+    () =>
+      ROTACION_CHART_BUCKETS.filter((bucket) =>
+        sliceBuckets.includes(bucket.id),
+      ),
+    [sliceBuckets],
+  );
+
+  const stacks = useMemo(
+    () =>
+      buildRotacionChartStacks(
+        scoped,
+        groupBy,
+        metric,
+        groupBy === "sede" || selectedItems.length > 0 ? 0 : 18,
+      ),
+    [groupBy, metric, scoped, selectedItems.length],
+  );
 
   const totals = useMemo(() => sumRotacionChartStacks(stacks), [stacks]);
   const nextGroup = nextChartGroupBy(groupBy);
@@ -149,7 +183,8 @@ export function RotacionGraficoBoard({
     setMetric("items");
     setFamilyMode("manufactura");
     setFocusTrail([]);
-    setQuery("");
+    setSelectedItems([]);
+    setSlicePreset("todos");
   };
 
   const drillInto = (row: (typeof stacks)[number]) => {
@@ -161,7 +196,7 @@ export function RotacionGraficoBoard({
       { groupBy, key: row.key, label: row.label },
     ]);
     setGroupBy(next);
-    setQuery("");
+    setSelectedItems([]);
   };
 
   const jumpToTrail = (index: number) => {
@@ -185,9 +220,9 @@ export function RotacionGraficoBoard({
             </CardTitle>
             <CardDescription>
               Misma lectura del correo diario: criticos de manufactura por sede.
-              Cambia agrupacion y metrica, o haz clic en una barra para bajar a
-              linea, sublinea e item. Empresa, sede, linea y sublinea de arriba
-              siguen filtrando este grafico.
+              Elige cortes (D, cero, restock; uno, dos o todos), busca y marca
+              items, o agrupa por sede / linea / sublinea / item. Empresa y sede
+              de arriba siguen filtrando este grafico.
             </CardDescription>
           </div>
           <Button
@@ -233,16 +268,33 @@ export function RotacionGraficoBoard({
               onChange={(value) => setMetric(value as RotacionChartMetric)}
             />
           </label>
-          <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Buscar en el grafico
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Sede, linea, item..."
-              className="h-8 rounded-lg border border-slate-200 px-3 text-xs font-normal normal-case tracking-normal text-slate-800"
+          <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Cortes
+            <MiniToggle
+              value={slicePreset}
+              options={ROTACION_CHART_SLICE_PRESETS.map((preset) => ({
+                id: preset.id,
+                label: preset.label,
+              }))}
+              onChange={(value) =>
+                setSlicePreset(value as RotacionChartSlicePresetId)
+              }
             />
           </label>
+          <div className="min-w-[16rem] flex-1">
+            <DiMultiSelect
+              label="Items"
+              values={selectedItems}
+              options={itemOptions}
+              emptyLabel="Todos"
+              searchable
+              searchPlaceholder="Buscar codigo o nombre..."
+              onChange={(items) => {
+                setSelectedItems(items);
+                if (items.length > 0) setGroupBy("item");
+              }}
+            />
+          </div>
         </div>
 
         {focusTrail.length > 0 ? (
@@ -271,10 +323,16 @@ export function RotacionGraficoBoard({
 
         <div className="grid gap-3 sm:grid-cols-4">
           {[
-            { label: "Criticos", value: totals.total, hint: "D + 0 + S" },
-            { label: "Demanda D", value: totals.demandaD, hint: "Baja rotacion" },
-            { label: "Cero rotacion", value: totals.cero, hint: "Sin salida" },
-            { label: "Restock S", value: totals.restock, hint: "Nuevos / restock" },
+            { label: "Criticos", value: totals.total, hint: visibleBuckets.map((b) => b.label).join(" + ") },
+            ...visibleBuckets.map((bucket) => ({
+              label: bucket.label,
+              value: totals[bucket.id],
+              hint: bucket.id === "demandaD"
+                ? "Baja rotacion"
+                : bucket.id === "cero"
+                  ? "Sin salida"
+                  : "Nuevos / restock",
+            })),
           ].map((card) => (
             <div
               key={card.label}
@@ -324,7 +382,7 @@ export function RotacionGraficoBoard({
                       axisFormatter(value, metric),
                   },
                 ]}
-                series={ROTACION_CHART_BUCKETS.map((bucket) => ({
+                series={visibleBuckets.map((bucket) => ({
                   data: stacks.map((row) => row[bucket.id]),
                   label: bucket.label,
                   color: bucket.color,
@@ -340,7 +398,9 @@ export function RotacionGraficoBoard({
               />
             </div>
             <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <h3 className="text-sm font-bold text-slate-900">Mix D + 0 + S</h3>
+              <h3 className="text-sm font-bold text-slate-900">
+                Mix {visibleBuckets.map((bucket) => bucket.label).join(" + ")}
+              </h3>
               <p className="mb-2 text-[11px] text-slate-500">
                 Participacion del alcance actual.
               </p>
@@ -351,7 +411,7 @@ export function RotacionGraficoBoard({
                     innerRadius: 48,
                     outerRadius: 92,
                     paddingAngle: 2,
-                    data: ROTACION_CHART_BUCKETS.map((bucket) => ({
+                    data: visibleBuckets.map((bucket) => ({
                       id: bucket.id,
                       value: totals[bucket.id],
                       label: bucket.label,
@@ -373,9 +433,11 @@ export function RotacionGraficoBoard({
                   <th className="px-3 py-2 text-left">
                     {GROUP_OPTIONS.find((option) => option.id === groupBy)?.label}
                   </th>
-                  <th className="px-3 py-2 text-right">Demanda D</th>
-                  <th className="px-3 py-2 text-right">Cero</th>
-                  <th className="px-3 py-2 text-right">Restock S</th>
+                  {visibleBuckets.map((bucket) => (
+                    <th key={bucket.id} className="px-3 py-2 text-right">
+                      {bucket.label}
+                    </th>
+                  ))}
                   <th className="px-3 py-2 text-right">Total</th>
                 </tr>
               </thead>
@@ -395,15 +457,14 @@ export function RotacionGraficoBoard({
                         <span className="font-medium text-slate-800">{row.label}</span>
                       )}
                     </td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-rose-800">
-                      {formatMetric(row.demandaD, metric)}
-                    </td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">
-                      {formatMetric(row.cero, metric)}
-                    </td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-amber-800">
-                      {formatMetric(row.restock, metric)}
-                    </td>
+                    {visibleBuckets.map((bucket) => (
+                      <td
+                        key={bucket.id}
+                        className="px-3 py-1.5 text-right tabular-nums text-slate-700"
+                      >
+                        {formatMetric(row[bucket.id], metric)}
+                      </td>
+                    ))}
                     <td className="px-3 py-1.5 text-right font-semibold tabular-nums">
                       {formatMetric(row.total, metric)}
                     </td>
