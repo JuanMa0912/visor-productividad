@@ -18,6 +18,8 @@ import {
   MapPin,
   PackageSearch,
   CircleHelp,
+  BarChart3,
+  Table2,
   SlidersHorizontal,
   X,
 } from "lucide-react";
@@ -168,6 +170,7 @@ import { auditChangedAtDateKeyBogota } from "./audit-utils";
 import { logExportDownload } from "@/lib/client/log-export-download";
 import { SurtidoAuditModal } from "./surtido-audit-modal";
 import { RestockSurtidoFotoControl } from "./restock-surtido-foto-control";
+import { RotacionGraficoBoard } from "./rotacion-grafico-board";
 import {
   buildRotacionRowsCacheKey,
   readRotacionRowsIdbCache,
@@ -229,6 +232,8 @@ export function RotacionPageInner() {
   const [ready, setReady] = useState(false);
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
+  const [boardView, setBoardView] = useState<"tabla" | "grafico">("tabla");
+  const graficoAllSedesOnceRef = useRef(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSavingAbcdConfig, setIsSavingAbcdConfig] = useState(false);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
@@ -2887,6 +2892,19 @@ export function RotacionPageInner() {
     [buildRotacionPdfDocument, dateRange.end, dateRange.start, exportRowCount],
   );
 
+  const openGraficoView = () => {
+    setBoardView("grafico");
+    if (graficoAllSedesOnceRef.current) return;
+    graficoAllSedesOnceRef.current = true;
+    if (allSedeOptions.length < 2) return;
+    if (selectedSedes.length === allSedeOptions.length) return;
+    skipSedeRestoreRef.current = true;
+    setSelectedSedes(allSedeOptions.map((option) => option.value));
+    setSelectedCompanies(
+      Array.from(new Set(allSedeOptions.map((option) => option.empresa))),
+    );
+  };
+
   if (!ready) {
     return (
       <div className="min-h-screen bg-slate-100 px-4 py-10 text-foreground">
@@ -3537,6 +3555,40 @@ export function RotacionPageInner() {
           </Card>
         </section>
 
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setBoardView("tabla")}
+            className={cn(
+              "inline-flex h-9 items-center gap-2 rounded-full px-4 text-xs font-semibold uppercase tracking-[0.14em]",
+              boardView === "tabla"
+                ? "bg-amber-600 text-white shadow-sm"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-amber-50",
+            )}
+          >
+            <Table2 className="h-4 w-4" />
+            Tabla
+          </button>
+          <button
+            type="button"
+            onClick={openGraficoView}
+            className={cn(
+              "inline-flex h-9 items-center gap-2 rounded-full px-4 text-xs font-semibold uppercase tracking-[0.14em]",
+              boardView === "grafico"
+                ? "bg-amber-600 text-white shadow-sm"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-amber-50",
+            )}
+          >
+            <BarChart3 className="h-4 w-4" />
+            Grafico
+          </button>
+          {boardView === "grafico" ? (
+            <p className="text-xs text-slate-500">
+              Vista inicial: resumen D+0+S de todas las sedes, como el correo.
+            </p>
+          ) : null}
+        </div>
+
         {error ? (
           <Card className="border-dashed border-rose-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">
@@ -3622,6 +3674,13 @@ export function RotacionPageInner() {
               </p>
             </CardContent>
           </Card>
+        ) : boardView === "grafico" ? (
+          <RotacionGraficoBoard
+            rows={catalogFilteredRows}
+            dateRange={dateRange}
+            abcdConfig={abcdConfig}
+            loading={isLoadingData}
+          />
         ) : rows.length === 0 ? (
           <Card className="border-dashed border-amber-300 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
             <CardContent className="flex flex-col items-center px-6 py-12 text-center">

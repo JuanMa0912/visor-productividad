@@ -289,4 +289,59 @@ export const buildRotacionCriticalDigest = (
   };
 };
 
+export type RotacionCriticalBucket = "demandaD" | "cero" | "restock";
+
+export type RotacionCriticalTaggedRow = {
+  row: RotationRow;
+  bucket: RotacionCriticalBucket;
+  family: RotacionCriticalDigestFamily;
+};
+
+const sedeGroupKey = (row: RotationRow) => `${row.empresa}\u001f${row.sedeId}`;
+
+/**
+ * Marca D / 0 / S con la misma regla del correo: ABCD por familia **dentro de
+ * cada sede**. Así el gráfico consolidado cuadra con el digest por sede.
+ */
+export const tagRotacionCriticalRows = (
+  rows: readonly RotationRow[],
+  dateRange: DateRange,
+  abcdConfig: AbcdConfig,
+  families: readonly RotacionCriticalDigestFamily[],
+): RotacionCriticalTaggedRow[] => {
+  const normalized = normalizeRotationRows([...rows]);
+  const bySede = new Map<string, RotationRow[]>();
+  for (const row of normalized) {
+    const key = sedeGroupKey(row);
+    const list = bySede.get(key);
+    if (list) list.push(row);
+    else bySede.set(key, [row]);
+  }
+
+  const tagged: RotacionCriticalTaggedRow[] = [];
+  for (const sedeRows of bySede.values()) {
+    for (const family of families) {
+      const familyRows = filterRowsByFamily(sedeRows, family);
+      const categoryByItem = buildAbcdCategoryByItemForRows(
+        familyRows,
+        dateRange,
+        abcdConfig,
+      );
+      for (const row of familyRows) {
+        if (isCeroRotacionExcludingNuevo(row, dateRange)) {
+          tagged.push({ row, bucket: "cero", family });
+        } else if (isNuevoItemInSelectedRange(row, dateRange)) {
+          tagged.push({ row, bucket: "restock", family });
+        } else if (
+          isAbcdFilterableRow(row, dateRange) &&
+          categoryByItem.get(row.item) === "D"
+        ) {
+          tagged.push({ row, bucket: "demandaD", family });
+        }
+      }
+    }
+  }
+  return tagged;
+};
+
 export { CERO_ROTACION_ESTADO_LABELS };
