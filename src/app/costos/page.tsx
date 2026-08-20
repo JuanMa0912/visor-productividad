@@ -147,7 +147,6 @@ export default function CostosPage() {
   const [itemLabelById, setItemLabelById] = useState<Record<string, string>>(
     {},
   );
-  const [sedesReady, setSedesReady] = useState(false);
   const [metric, setMetric] = useState<PreciosProveedorMetric>("pcu");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,11 +160,11 @@ export default function CostosPage() {
   const [drawerSede, setDrawerSede] = useState<string | null>(null);
   const [drawerItemId, setDrawerItemId] = useState<string | null>(null);
   const [rielAbierto, setRielAbierto] = useState(true);
+  const [filtrosAplicados, setFiltrosAplicados] = useState<string | null>(null);
   const [matrixSort, setMatrixSort] = useState<{ col: number; dir: number }>({
     col: -2,
     dir: 1,
   });
-  const skipNextMatrixEffect = useRef(false);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sublineasOptions = useMemo(() => {
@@ -481,7 +480,6 @@ export default function CostosPage() {
     // Las sedes arrancan VACIAS a proposito: el usuario elige cuales comparar.
     // La empresa si queda precargada porque acota el desplegable de sedes.
     setSelectedSedes([]);
-    setSedesReady(true);
     void sedeKeys;
   }, [loadMatrix]);
 
@@ -500,29 +498,8 @@ export default function CostosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/auth gate
   }, [status, canAccess]);
 
-  useEffect(() => {
-    if (status !== "authenticated" || !canAccess) return;
-    if (!sedesReady || !dateStart || !dateEnd) return;
-    if (skipNextMatrixEffect.current) {
-      skipNextMatrixEffect.current = false;
-      return;
-    }
-    void loadMatrix();
-  }, [
-    status,
-    canAccess,
-    dateStart,
-    dateEnd,
-    selectedLineas,
-    selectedSublineas,
-    selectedProveedores,
-    selectedMarcas,
-    selectedItems,
-    selectedSedes,
-    selectedEmpresas,
-    sedesReady,
-    loadMatrix,
-  ]);
+  // Ya no se consulta en cada clic: la consulta la dispara "Actualizar". Ver
+  // aplicarFiltros mas abajo.
 
   useEffect(() => {
     const q = itemQuery.trim();
@@ -626,6 +603,49 @@ export default function CostosPage() {
       return (vb - va) * matrixSort.dir;
     });
   }, [matrix, matrixSort, metric]);
+
+  /**
+   * Firma de los filtros que se estan editando. Sirve para dos cosas: saber si
+   * hay cambios sin aplicar, y no volver a consultar si se presiona Actualizar
+   * sin haber tocado nada.
+   */
+  const filtrosActuales = useMemo(
+    () =>
+      JSON.stringify({
+        dateStart,
+        dateEnd,
+        selectedEmpresas,
+        selectedSedes,
+        selectedLineas,
+        selectedSublineas,
+        selectedItems,
+        selectedProveedores,
+        selectedMarcas,
+      }),
+    [
+      dateStart,
+      dateEnd,
+      selectedEmpresas,
+      selectedSedes,
+      selectedLineas,
+      selectedSublineas,
+      selectedItems,
+      selectedProveedores,
+      selectedMarcas,
+    ],
+  );
+
+  const hayCambiosSinAplicar =
+    filtrosAplicados !== null && filtrosAplicados !== filtrosActuales;
+
+  const puedeConsultar =
+    selectedSedes.length > 0 && Boolean(dateStart) && Boolean(dateEnd);
+
+  const aplicarFiltros = useCallback(() => {
+    if (!puedeConsultar) return;
+    setFiltrosAplicados(filtrosActuales);
+    void loadMatrix();
+  }, [filtrosActuales, loadMatrix, puedeConsultar]);
 
   if (status !== "authenticated" || !user) {
     return (
@@ -731,6 +751,7 @@ export default function CostosPage() {
     }
     return heatStyleHighGreen(t01);
   };
+
 
 
   const sortArrow = (col: number) =>
@@ -974,9 +995,42 @@ export default function CostosPage() {
                 className="mt-1 block rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
               />
             </label>
-            <span className="text-xs text-slate-500">
-              La métrica se elige en las tarjetas de arriba.
-            </span>
+            <button
+              type="button"
+              onClick={aplicarFiltros}
+              disabled={!puedeConsultar || loading}
+              className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                hayCambiosSinAplicar
+                  ? "bg-blue-600 text-white hover:bg-blue-700"
+                  : "bg-slate-900 text-white hover:bg-slate-800"
+              }`}
+            >
+              {loading ? (
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  className="animate-spin"
+                  aria-hidden
+                >
+                  <path d="M21 12a9 9 0 1 1-6.2-8.6" />
+                </svg>
+              ) : null}
+              {loading ? "Consultando…" : "Actualizar"}
+            </button>
+            {hayCambiosSinAplicar && !loading ? (
+              <span className="text-xs font-semibold text-blue-700">
+                Hay filtros sin aplicar
+              </span>
+            ) : (
+              <span className="text-xs text-slate-500">
+                La métrica se elige en las tarjetas de arriba.
+              </span>
+            )}
           </div>
           <p className="mt-3 w-full text-[11px] text-slate-500">
             {isSingleDay
@@ -1036,7 +1090,8 @@ export default function CostosPage() {
           </div>
           <div className="max-h-[min(70vh,820px)] overflow-auto">
             {!matrix || matrix.rows.length === 0 ? (
-              selectedSedes.length === 0 && !loading ? (
+              (selectedSedes.length === 0 || filtrosAplicados === null) &&
+                !loading ? (
                 // El tablero arranca sin sedes a proposito: se dice que hacer,
                 // en vez de dejar un "sin datos" que parece que algo fallo.
                 <div className="flex flex-col items-center gap-2 px-4 py-12 text-center">
@@ -1054,13 +1109,24 @@ export default function CostosPage() {
                     <path d="M3 6h18M6 12h12M10 18h4" />
                   </svg>
                   <p className="text-sm font-semibold text-slate-700">
-                    Elige las sedes que quieres comparar
+                    {selectedSedes.length === 0
+                      ? "Elige las sedes que quieres comparar"
+                      : "Listo para consultar"}
                   </p>
                   <p className="max-w-sm text-xs text-slate-500">
-                    El heatmap compara el costo de un mismo ítem entre sedes, así
-                    que necesita al menos una. Puedes marcar varias de una o
-                    varias empresas.
+                    {selectedSedes.length === 0
+                      ? "El heatmap compara el costo de un mismo ítem entre sedes, así que necesita al menos una. Puedes marcar varias de una o varias empresas."
+                      : "Termina de ajustar los filtros y presiona Actualizar. La consulta ya no se dispara en cada clic: con varias sedes y un rango largo cada una cuesta segundos."}
                   </p>
+                  {selectedSedes.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={aplicarFiltros}
+                      className="mt-1 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800"
+                    >
+                      Actualizar
+                    </button>
+                  ) : null}
                 </div>
               ) : (
                 <p className="px-4 py-8 text-sm text-slate-500">
