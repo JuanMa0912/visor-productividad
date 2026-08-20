@@ -7,6 +7,9 @@ import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { canAccessPreciosProveedor } from "@/lib/shared/special-role-features";
 import { DiMultiSelect } from "@/app/analisis-de-inventario/di-multi-select";
 import { keepSelected } from "@/lib/exp-precios-proveedor/filters";
+import { CostosKpis, type CostosPrevTotals } from "@/app/costos/costos-kpis";
+import { CostosRail } from "@/app/costos/costos-rail";
+import { CostosDrawer } from "@/app/costos/costos-drawer";
 import type {
   PreciosProveedorExpandRow,
   PreciosProveedorMatrix,
@@ -153,6 +156,10 @@ export default function CostosPage() {
   const [expandLoading, setExpandLoading] = useState<string | null>(null);
   const [expandRows, setExpandRows] = useState<PreciosProveedorExpandRow[]>([]);
   const [expandError, setExpandError] = useState<string | null>(null);
+  const [prev, setPrev] = useState<CostosPrevTotals | null>(null);
+  const [notaAbierta, setNotaAbierta] = useState(false);
+  const [drawerSede, setDrawerSede] = useState<string | null>(null);
+  const [drawerItemId, setDrawerItemId] = useState<string | null>(null);
   const skipNextMatrixEffect = useRef(false);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -353,6 +360,22 @@ export default function CostosPage() {
         setExpandRows([]);
         setExpandError(null);
         setExpandMode("cost");
+
+        const ids = (data.matrix?.rows ?? []).map((row) => row.id).filter(Boolean);
+        setPrev(null);
+        if (ids.length > 0) {
+          const prevParams = new URLSearchParams({
+            mode: "prev",
+            from,
+            to,
+            sedes: sedes.join(","),
+            items: ids.join(","),
+          });
+          void fetch(`/api/costos?${prevParams}`, { cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => setPrev((d?.prev as CostosPrevTotals | null) ?? null))
+            .catch(() => setPrev(null));
+        }
       } catch (err) {
         setMatrix(null);
         setError(err instanceof Error ? err.message : "Error cargando");
@@ -662,6 +685,20 @@ export default function CostosPage() {
 
   const isSingleDay = Boolean(dateStart && dateEnd && dateStart === dateEnd);
 
+  const fechaLegible = (iso: string, largo: boolean) => {
+    if (!/^d{4}-d{2}-d{2}$/.test(iso)) return iso;
+    const [y, m, d] = iso.split("-").map(Number);
+    const fecha = new Date(y!, (m ?? 1) - 1, d ?? 1);
+    return fecha.toLocaleDateString("es-CO", {
+      day: "numeric",
+      month: largo ? "long" : "short",
+      year: largo ? "numeric" : undefined,
+    });
+  };
+  const rangoLabel = isSingleDay
+    ? fechaLegible(dateStart, true)
+    : `${fechaLegible(dateStart, false)} — ${fechaLegible(dateEnd, false)}`;
+
   return (
     <div className="min-h-screen bg-slate-100 text-foreground">
       <PortalBrandingHeader
@@ -672,25 +709,93 @@ export default function CostosPage() {
         showSeccionesShortcut
       />
       <div className="mx-auto w-full max-w-[1400px] px-4 py-6 lg:px-6">
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">
-          Costos
-        </h1>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-          Por defecto el <strong>día anterior</strong>. Si eliges un rango, se
-          promedian los precios/costos de cada día. El color compara{" "}
-          <strong>sedes del mismo ítem</strong> (no ítem contra ítem). En costo
-          de entrada y precio venta: verde = más bajo, rojo = más alto.{" "}
-          <strong>Un clic</strong> abre proveedores con costo de entrada.{" "}
-          <strong>Doble clic</strong> muestra valor por kilo, kilos y margen
-          vendido.
-        </p>
-        {meta?.note ? (
-          <p className="mt-2 max-w-3xl text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            {meta.note}
-          </p>
-        ) : null}
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-slate-900">
+              Costos de entrada
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {rangoLabel}
+              {selectedSedes.length > 0
+                ? ` · ${selectedSedes.length} ${selectedSedes.length === 1 ? "sede" : "sedes"}`
+                : ""}
+            </p>
+          </div>
+        </div>
 
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        {/* La cabecera ES el selector de metrica: la tarjeta activa pinta el heatmap. */}
+        <div className="mt-4">
+          <CostosKpis
+            matrix={matrix}
+            prev={prev}
+            metric={metric}
+            onMetric={setMetric}
+            isSingleDay={isSingleDay}
+            loading={loading}
+          />
+        </div>
+
+        {/* Los 11 renglones de prosa pasan a un desplegable: siguen disponibles
+            para quien pregunte de donde sale el numero, pero no estorban. */}
+        <div className="mt-3 overflow-hidden rounded-xl border border-slate-900/15 bg-white">
+          <button
+            type="button"
+            onClick={() => setNotaAbierta((open) => !open)}
+            aria-expanded={notaAbierta}
+            className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-slate-50"
+          >
+            <span className="flex items-center gap-2 text-[13px] font-semibold text-slate-800">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 16v-5M12 8h.01" strokeLinecap="round" />
+              </svg>
+              Nota metodológica del cálculo de costo de entrada
+            </span>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              className={`shrink-0 text-slate-400 transition-transform ${notaAbierta ? "rotate-180" : ""}`}
+              aria-hidden
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+          {notaAbierta ? (
+            <div className="border-t border-slate-100 px-4 py-3 text-xs leading-relaxed text-slate-600">
+              {meta?.note ? <p className="mb-2">{meta.note}</p> : null}
+              <p>
+                Costo de entrada = inventario <strong>EF</strong> del POS
+                (cmmovimiento_inventario en el 217). Si ese día no hay EF, se usa
+                el pedido FR/OC. El <strong>tránsito (ET)</strong> se informa
+                aparte y nunca se suma a lo recibido: es mercancía despachada que
+                todavía no llegó. El precio de venta no se toca.
+              </p>
+              <p className="mt-2">
+                El color compara <strong>sedes del mismo ítem</strong>, nunca ítem
+                contra ítem. En rangos de varios días los precios son{" "}
+                <strong>ponderados por kilos</strong>, no promedio simple de los
+                días. <strong>Un clic</strong> en una celda abre los proveedores
+                de esa sede; <strong>doble clic</strong> en la fila muestra $/kg,
+                kilos y margen.
+              </p>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
             <DiMultiSelect
               label="Empresa"
@@ -810,29 +915,9 @@ export default function CostosPage() {
                 className="mt-1 block rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
               />
             </label>
-            <div className="flex rounded-lg border border-slate-200 p-1">
-              {(
-                [
-                  ["pcu", "Costo entrada"],
-                  ["pvu", "Precio venta"],
-                  ["margenPct", "Margen %"],
-                  ["units", "Kilos"],
-                ] as Array<[PreciosProveedorMetric, string]>
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setMetric(key)}
-                  className={`rounded-md px-2.5 py-1.5 text-xs font-bold ${
-                    metric === key
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <span className="text-xs text-slate-500">
+              La métrica se elige en las tarjetas de arriba.
+            </span>
           </div>
           <p className="mt-3 w-full text-[11px] text-slate-500">
             {isSingleDay
@@ -849,7 +934,8 @@ export default function CostosPage() {
           </p>
         ) : null}
 
-        <section className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-start">
+        <section className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <div>
               <h2 className="text-sm font-bold text-slate-900">
@@ -953,15 +1039,39 @@ Precio venta ${unitMoney(cell.pvu)} · Costo entrada ${unitMoney(cell.pcu)}
 Margen ${pctFmt(cell.margenPct)} · ${unitsFmt(cell.units)} und
 Venta ${money(cell.sales)} · Costo entrada tot. ${money(cell.cost)}`
                               : "";
+                            const abrirPanel = () => {
+                              // Clic en la CELDA: abre los proveedores de esa
+                              // sede. Se detiene la propagacion para no disparar
+                              // ademas el clic de la fila, que sigue haciendo lo
+                              // de siempre (expandir en linea).
+                              setDrawerItemId(row.id);
+                              setDrawerSede(col.key);
+                              if (
+                                expandedItemId !== row.id ||
+                                expandRows.length === 0
+                              ) {
+                                void loadExpand(row, "cost");
+                              }
+                            };
                             return (
                               <td key={col.key} className="p-1">
-                                <div
-                                  className="rounded-md px-2 py-2 text-center font-semibold tabular-nums"
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    abrirPanel();
+                                  }}
+                                  onDoubleClick={(event) =>
+                                    event.stopPropagation()
+                                  }
+                                  className="w-full cursor-pointer rounded-md px-2 py-2 text-center font-semibold tabular-nums transition-shadow hover:ring-2 hover:ring-slate-900/20"
                                   style={style}
-                                  title={title}
+                                  title={`${title}
+
+Clic: proveedores de esta sede`}
                                 >
                                   {formatCell(cell)}
-                                </div>
+                                </button>
                               </td>
                             );
                           })}
@@ -1082,6 +1192,36 @@ Sin entradas de este ítem en el rango de fechas seleccionado`;
             )}
           </div>
         </section>
+
+          <CostosRail
+            matrix={matrix}
+            onItem={(itemId) => {
+              const fila = matrix?.rows.find((row) => row.id === itemId);
+              if (fila) void loadExpand(fila, "cost");
+            }}
+          />
+        </div>
+
+        <CostosDrawer
+          open={Boolean(drawerItemId && drawerSede)}
+          row={matrix?.rows.find((row) => row.id === drawerItemId) ?? null}
+          cell={
+            matrix?.cells.find(
+              (cell) => cell.rowId === drawerItemId && cell.sedeKey === drawerSede,
+            ) ?? null
+          }
+          sedeKey={drawerSede}
+          sedeLabel={
+            matrix?.columns.find((col) => col.key === drawerSede)?.label ?? ""
+          }
+          rows={expandRows}
+          loading={expandLoading === drawerItemId}
+          error={expandError}
+          onClose={() => {
+            setDrawerItemId(null);
+            setDrawerSede(null);
+          }}
+        />
       </div>
     </div>
   );

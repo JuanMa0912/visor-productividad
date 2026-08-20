@@ -10,12 +10,17 @@ import {
   queryPreciosProveedorItemOptions,
   queryPreciosProveedorMatrix,
   queryPreciosProveedorMeta,
+  queryPreciosProveedorPrev,
 } from "@/lib/exp-precios-proveedor/queries";
 import { splitCostosCsv } from "@/lib/exp-precios-proveedor/filters";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 
 const CACHE_CONTROL = "no-store";
-const MAX_RANGE_DAYS = 14;
+// Un mes completo. Medido contra la base del tablero: el CTE pesado pasa de
+// 1.119 ms con 14 dias a 2.416 ms con 31, y las filas apenas crecen de 61.250 a
+// 66.030 porque se agrupan por item y sede: lo que crece es el barrido, no el
+// resultado.
+const MAX_RANGE_DAYS = 31;
 
 const isIsoDate = (value: string | null): value is string =>
   Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
@@ -81,7 +86,8 @@ export async function GET(request: Request) {
   const mode =
     modeRaw === "matrix" ||
     modeRaw === "proveedores" ||
-    modeRaw === "items"
+    modeRaw === "items" ||
+    modeRaw === "prev"
       ? modeRaw
       : "meta";
 
@@ -122,6 +128,18 @@ export async function GET(request: Request) {
       const proveedorIds = splitCostosCsv(url.searchParams.get("proveedor"));
       const marcaIds = splitCostosCsv(url.searchParams.get("marca"));
       const itemIds = splitCostosCsv(url.searchParams.get("items"));
+
+      if (mode === "prev") {
+        // Totales del periodo anterior para los deltas de cabecera. Se pide en
+        // paralelo desde el cliente, acotado a los items que ya trajo la matriz.
+        const prev = await queryPreciosProveedorPrev(client, {
+          fromIso: from,
+          toIso: to,
+          itemIds: splitCostosCsv(url.searchParams.get("items")),
+          sedeKeys: sedeKeys.length > 0 ? sedeKeys : null,
+        });
+        return withSession(NextResponse.json({ prev }));
+      }
 
       if (mode === "items") {
         const items = await queryPreciosProveedorItemOptions(client, {
