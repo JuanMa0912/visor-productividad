@@ -107,11 +107,10 @@ type FormatoDianValue = "1007" | "1005" | "1006";
 const FORMATO_DIAN_OPTIONS: {
   value: FormatoDianValue;
   label: string;
-  manual: "prorrateo" | "impoconsumo" | null;
 }[] = [
-  { value: "1007", label: "1007 · Ingresos recibidos", manual: null },
-  { value: "1005", label: "1005 · IVA descontable", manual: "prorrateo" },
-  { value: "1006", label: "1006 · IVA generado", manual: "impoconsumo" },
+  { value: "1007", label: "1007 · Ingresos recibidos" },
+  { value: "1005", label: "1005 · IVA descontable" },
+  { value: "1006", label: "1006 · IVA generado" },
 ];
 
 export function ExcelDianPanel() {
@@ -141,7 +140,6 @@ export function ExcelDianPanel() {
   const [empresa, setEmpresa] = useState<ExcelDianEmpresaValue>("mtodo");
   const [formato, setFormato] = useState<FormatoDianValue>("1007");
   const [prorrateoInput, setProrrateoInput] = useState("");
-  const [impoconsumoInput, setImpoconsumoInput] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -265,9 +263,6 @@ export function ExcelDianPanel() {
       });
       if (formato === "1005" && prorrateoInput.trim() !== "") {
         params.set("prorrateo", prorrateoInput.trim());
-      }
-      if (formato === "1006" && impoconsumoInput.trim() !== "") {
-        params.set("impoconsumo", impoconsumoInput.trim());
       }
       const response = await fetch(`/api/excel-dian/export?${params}`, {
         method: "GET",
@@ -493,8 +488,8 @@ export function ExcelDianPanel() {
               Elige el formato (1007 Ingresos, 1005 IVA descontable o 1006 IVA
               generado), la empresa (Comercializadora, Mercamio o Merkmios) y el
               periodo: un mes, varios meses o el año calendario completo
-              (enero–diciembre). Los formatos de IVA permiten ajustar el
-              prorrateo o el impuesto al consumo a mano.
+              (enero–diciembre). El 1005 permite ajustar el % de prorrateo a
+              mano.
             </p>
           </header>
 
@@ -552,25 +547,6 @@ export function ExcelDianPanel() {
               </div>
             )}
 
-            {formato === "1006" && (
-              <div className="pt-1">
-                <label
-                  htmlFor="excel-dian-impo"
-                  className="block text-[11px] font-medium text-slate-500"
-                >
-                  Impuesto al consumo total (opcional)
-                </label>
-                <input
-                  id="excel-dian-impo"
-                  type="text"
-                  inputMode="numeric"
-                  value={impoconsumoInput}
-                  onChange={(e) => setImpoconsumoInput(e.target.value)}
-                  placeholder="Ej: 415102755 — vacío = neto contable"
-                  className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[14px] text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                />
-              </div>
-            )}
           </div>
 
           <div className="mt-6 grid gap-6 sm:grid-cols-2">
