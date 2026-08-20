@@ -11,8 +11,8 @@ function LoginPageFallback() {
   return (
     <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[1.1fr_1fr]">
       <AuthBrandingPanelFallback />
-      <div className="flex items-center justify-center bg-slate-50 px-6">
-        <div className="h-[360px] w-full max-w-sm animate-pulse rounded-2xl bg-slate-200/60" />
+      <div className="login-form-aurora flex items-center justify-center px-6">
+        <div className="h-[360px] w-full max-w-sm animate-pulse rounded-3xl bg-white/50" />
       </div>
     </div>
   );

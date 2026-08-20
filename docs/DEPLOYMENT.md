@@ -145,8 +145,9 @@ en estos ataques. Las actualizaciones se revisan una por una (Dependabot abre
 los PRs los lunes).
 
 > **Recordatorio:** si `package.json` cambio, el `npm ci` es **obligatorio**
-> antes del build. El 2026-08-06 el build reventaba con
-> `Module not found: Can't resolve 'qrcode'` justo por saltarse este paso.
+> antes del build. Ya paso dos veces: `qrcode` (2026-08-06) y el login 3D
+> (`three` / `@react-three/*`, 2026-08-20). Sin `npm ci`, Turbopack responde
+> `Module not found`.
 
 ### Validar antes de publicar
 

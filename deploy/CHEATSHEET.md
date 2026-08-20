@@ -49,7 +49,8 @@ git push origin main
 ```bash
 cd /opt/visor-productividad
 sudo -u visor git pull origin main
-sudo -u visor npm run build:server   # incluye copia de static/ y public/ al standalone
+sudo -u visor npm ci --ignore-scripts   # obligatorio si cambio package.json (p. ej. three.js del login)
+sudo -u visor npm run build:server      # incluye copia de static/ y public/ al standalone
 sudo systemctl restart visor
 sudo systemctl status visor --no-pager
 ```
