@@ -160,6 +160,11 @@ export default function CostosPage() {
   const [notaAbierta, setNotaAbierta] = useState(false);
   const [drawerSede, setDrawerSede] = useState<string | null>(null);
   const [drawerItemId, setDrawerItemId] = useState<string | null>(null);
+  const [rielAbierto, setRielAbierto] = useState(true);
+  const [matrixSort, setMatrixSort] = useState<{ col: number; dir: number }>({
+    col: -2,
+    dir: 1,
+  });
   const skipNextMatrixEffect = useRef(false);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -473,11 +478,11 @@ export default function CostosPage() {
     setDateStart(start);
     setDateEnd(end);
     setSelectedEmpresas(defaultEmpresa ? [defaultEmpresa] : []);
-    setSelectedSedes(sedeKeys);
+    // Las sedes arrancan VACIAS a proposito: el usuario elige cuales comparar.
+    // La empresa si queda precargada porque acota el desplegable de sedes.
+    setSelectedSedes([]);
     setSedesReady(true);
-    // Carga inmediata del día anterior (no espera otro ciclo ni input del usuario).
-    skipNextMatrixEffect.current = true;
-    await loadMatrix({ from: start, to: end, sedes: sedeKeys });
+    void sedeKeys;
   }, [loadMatrix]);
 
   useEffect(() => {
@@ -577,6 +582,50 @@ export default function CostosPage() {
     selectedLineas,
     selectedSublineas,
   ]);
+
+  /**
+   * Orden de las filas. Se ordena por la METRICA que se esta mirando: si tienes
+   * el heatmap en costo de entrada, ordenar por una sede te ordena por costo.
+   *
+   * Las celdas sin dato van SIEMPRE al final, en las dos direcciones: si no,
+   * "de menor a mayor" arranca con una pila de huecos y no sirve para nada.
+   */
+  const sortedRows = useMemo(() => {
+    const filas = matrix?.rows ?? [];
+    if (!matrix || matrixSort.col === -2) return filas;
+
+    if (matrixSort.col === -1) {
+      return [...filas].sort(
+        (a, b) => a.label.localeCompare(b.label, "es") * matrixSort.dir,
+      );
+    }
+
+    const sedeKey = matrix.columns[matrixSort.col]?.key;
+    if (!sedeKey) return filas;
+
+    const porFila = new Map<string, number>();
+    for (const cell of matrix.cells) {
+      if (cell.sedeKey !== sedeKey) continue;
+      const valor =
+        metric === "pvu"
+          ? cell.pvu
+          : metric === "pcu"
+            ? cell.pcu
+            : metric === "units"
+              ? cell.units
+              : cell.margenPct;
+      if (Number.isFinite(valor) && valor !== 0) porFila.set(cell.rowId, valor);
+    }
+
+    return [...filas].sort((a, b) => {
+      const va = porFila.get(a.id);
+      const vb = porFila.get(b.id);
+      if (va === undefined && vb === undefined) return 0;
+      if (va === undefined) return 1;
+      if (vb === undefined) return -1;
+      return (vb - va) * matrixSort.dir;
+    });
+  }, [matrix, matrixSort, metric]);
 
   if (status !== "authenticated" || !user) {
     return (
@@ -683,6 +732,16 @@ export default function CostosPage() {
     return heatStyleHighGreen(t01);
   };
 
+
+  const sortArrow = (col: number) =>
+    matrixSort.col === col ? (matrixSort.dir > 0 ? " ▼" : " ▲") : "";
+
+  const toggleSort = (col: number) =>
+    setMatrixSort((current) => ({
+      col,
+      dir: current.col === col ? current.dir * -1 : 1,
+    }));
+
   const isSingleDay = Boolean(dateStart && dateEnd && dateStart === dateEnd);
 
   const fechaLegible = (iso: string, largo: boolean) => {
@@ -708,7 +767,7 @@ export default function CostosPage() {
         sede={user.sede}
         showSeccionesShortcut
       />
-      <div className="mx-auto w-full max-w-[1400px] px-4 py-6 lg:px-6">
+      <div className="mx-auto w-full max-w-[1900px] px-4 py-6 lg:px-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-black tracking-tight text-slate-900">
@@ -934,7 +993,29 @@ export default function CostosPage() {
           </p>
         ) : null}
 
-        <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-start">
+        <div className="mt-4 flex items-center justify-end gap-2 xl:-mb-1">
+          <button
+            type="button"
+            onClick={() => setRielAbierto((open) => !open)}
+            aria-pressed={rielAbierto}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              aria-hidden
+            >
+              <path d="M15 3v18M3 5h18M3 12h9M3 19h9" />
+            </svg>
+            {rielAbierto ? "Ocultar lectura gerencial" : "Ver lectura gerencial"}
+          </button>
+        </div>
+        <div className="mt-2 flex flex-col gap-3 xl:flex-row xl:items-start">
         <section className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <div>
@@ -955,30 +1036,65 @@ export default function CostosPage() {
           </div>
           <div className="max-h-[min(70vh,820px)] overflow-auto">
             {!matrix || matrix.rows.length === 0 ? (
-              <p className="px-4 py-8 text-sm text-slate-500">
-                {loading
-                  ? "Consultando costo de entrada…"
-                  : "Sin datos para el filtro."}
-              </p>
+              selectedSedes.length === 0 && !loading ? (
+                // El tablero arranca sin sedes a proposito: se dice que hacer,
+                // en vez de dejar un "sin datos" que parece que algo fallo.
+                <div className="flex flex-col items-center gap-2 px-4 py-12 text-center">
+                  <svg
+                    width="28"
+                    height="28"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    className="text-slate-300"
+                    aria-hidden
+                  >
+                    <path d="M3 6h18M6 12h12M10 18h4" />
+                  </svg>
+                  <p className="text-sm font-semibold text-slate-700">
+                    Elige las sedes que quieres comparar
+                  </p>
+                  <p className="max-w-sm text-xs text-slate-500">
+                    El heatmap compara el costo de un mismo ítem entre sedes, así
+                    que necesita al menos una. Puedes marcar varias de una o
+                    varias empresas.
+                  </p>
+                </div>
+              ) : (
+                <p className="px-4 py-8 text-sm text-slate-500">
+                  {loading
+                    ? "Consultando costo de entrada…"
+                    : "Sin datos para el filtro."}
+                </p>
+              )
             ) : (
               <table className="min-w-full border-collapse text-xs">
                 <thead className="sticky top-0 z-20">
                   <tr className="bg-slate-50 text-slate-600 shadow-sm">
-                    <th className="sticky left-0 z-30 bg-slate-50 px-3 py-2 text-left font-semibold">
-                      Ítem · proveedor
+                    <th
+                      className="sticky left-0 z-30 cursor-pointer select-none bg-slate-50 px-3 py-2 text-left font-semibold hover:text-slate-900"
+                      onClick={() => toggleSort(-1)}
+                      title="Clic para ordenar por nombre"
+                    >
+                      Ítem · proveedor{sortArrow(-1)}
                     </th>
-                    {matrix.columns.map((col) => (
+                    {matrix.columns.map((col, index) => (
                       <th
                         key={col.key}
-                        className="px-2 py-2 text-center font-semibold whitespace-nowrap"
+                        className="cursor-pointer select-none whitespace-nowrap px-2 py-2 text-center font-semibold hover:text-slate-900"
+                        onClick={() => toggleSort(index)}
+                        title={`${col.label} — clic para ordenar de mayor a menor, otro clic al revés`}
                       >
                         {col.label}
+                        {sortArrow(index)}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {matrix.rows.map((row) => {
+                  {sortedRows.map((row) => {
                     const isExpanded = expandedItemId === row.id;
                     const isExpanding = expandLoading === row.id;
                     return (
@@ -1004,7 +1120,7 @@ export default function CostosPage() {
                           title="Clic: proveedores y costo de entrada. Doble clic: kilos, venta y margen."
                         >
                           <th
-                            className={`sticky left-0 z-10 max-w-[18rem] px-3 py-2 text-left font-semibold ${
+                            className={`sticky left-0 z-10 w-[16rem] min-w-[13rem] max-w-[16rem] px-3 py-2 text-left font-semibold ${
                               isExpanded ? "bg-indigo-50" : "bg-white"
                             }`}
                           >
@@ -1115,7 +1231,7 @@ Clic: proveedores de esta sede`}
                                   key={child.rowId}
                                   className="border-t border-indigo-100 bg-indigo-50/40"
                                 >
-                                  <th className="sticky left-0 z-10 max-w-[18rem] bg-indigo-50 px-3 py-2 pl-8 text-left font-semibold">
+                                  <th className="sticky left-0 z-10 w-[16rem] min-w-[13rem] max-w-[16rem] bg-indigo-50 px-3 py-2 pl-8 text-left font-semibold">
                                     <div
                                       className="truncate text-indigo-950"
                                       title={`${child.proveedorLabel}${
@@ -1193,6 +1309,7 @@ Sin entradas de este ítem en el rango de fechas seleccionado`;
           </div>
         </section>
 
+          {rielAbierto ? (
           <CostosRail
             matrix={matrix}
             onItem={(itemId) => {
@@ -1200,6 +1317,7 @@ Sin entradas de este ítem en el rango de fechas seleccionado`;
               if (fila) void loadExpand(fila, "cost");
             }}
           />
+          ) : null}
         </div>
 
         <CostosDrawer
