@@ -1,5 +1,5 @@
 /**
- * Geometría de la marca UAID: U fina + un punto de dato.
+ * Geometría de la marca UAID: U al centro, dos órbitas finas (átomo).
  * Misma figura en header, favicon y encabezados de impresión.
  */
 
@@ -11,11 +11,38 @@ export const UAID_LOGO_GRADIENT = [
   { offset: "100%", color: "#4338ca" },
 ] as const;
 
-/** U abierta, trazo fino, cuenco redondo. */
+const UAID_LOGO_CENTER = { x: 16, y: 16.05 };
+
+/** U compacta en el núcleo. */
 export const UAID_LOGO_U_PATH =
-  "M10.6 8.6V20.35C10.6 24.05 13.05 26.45 16 26.45C18.95 26.45 21.4 24.05 21.4 20.35V8.6";
+  "M11.45 10.15V19.55C11.45 22.6 13.5 24.5 16 24.5C18.5 24.5 20.55 22.6 20.55 19.55V10.15";
 
-export const UAID_LOGO_U_STROKE = 1.7;
+export const UAID_LOGO_U_STROKE = 1.62;
 
-/** Punto de dato en el hueco de la U. */
-export const UAID_LOGO_DOT = { cx: 16, cy: 14.2, r: 1.05 } as const;
+export const UAID_LOGO_ORBIT_STROKE = 0.72;
+
+export const UAID_LOGO_ORBITS = [
+  { rx: 12.1, ry: 4.85, rotate: -38 },
+  { rx: 12.1, ry: 4.85, rotate: 52 },
+] as const;
+
+const round = (value: number) => Number(value.toFixed(2));
+
+/** Elipse completa rotada, como path, para header y favicon. */
+export function uaidLogoOrbitPath(orbit: {
+  rx: number;
+  ry: number;
+  rotate: number;
+}) {
+  const { x: cx, y: cy } = UAID_LOGO_CENTER;
+  const rad = (orbit.rotate * Math.PI) / 180;
+  const x1 = round(cx + orbit.rx * Math.cos(rad));
+  const y1 = round(cy + orbit.rx * Math.sin(rad));
+  const x2 = round(cx - orbit.rx * Math.cos(rad));
+  const y2 = round(cy - orbit.rx * Math.sin(rad));
+  return `M${x1} ${y1}A${orbit.rx} ${orbit.ry} ${orbit.rotate} 1 1 ${x2} ${y2}A${orbit.rx} ${orbit.ry} ${orbit.rotate} 1 1 ${x1} ${y1}`;
+}
+
+export function uaidLogoOrbitPaths() {
+  return UAID_LOGO_ORBITS.map(uaidLogoOrbitPath);
+}

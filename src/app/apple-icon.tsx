@@ -1,9 +1,10 @@
 import { ImageResponse } from "next/og";
 import {
-  UAID_LOGO_DOT,
   UAID_LOGO_GRADIENT,
+  UAID_LOGO_ORBIT_STROKE,
   UAID_LOGO_U_PATH,
   UAID_LOGO_U_STROKE,
+  uaidLogoOrbitPaths,
 } from "@/lib/shared/uaid-logo";
 
 /**
@@ -13,6 +14,8 @@ export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 
 export default function AppleIcon() {
+  const orbits = uaidLogoOrbitPaths();
+
   return new ImageResponse(
     (
       <div
@@ -26,6 +29,17 @@ export default function AppleIcon() {
         }}
       >
         <svg width="180" height="180" viewBox="0 0 32 32">
+          {orbits.map((d) => (
+            <path
+              key={d}
+              d={d}
+              fill="none"
+              stroke="#fff"
+              strokeWidth={UAID_LOGO_ORBIT_STROKE}
+              strokeLinecap="round"
+              opacity={0.82}
+            />
+          ))}
           <path
             d={UAID_LOGO_U_PATH}
             fill="none"
@@ -33,12 +47,6 @@ export default function AppleIcon() {
             strokeWidth={UAID_LOGO_U_STROKE}
             strokeLinecap="round"
             strokeLinejoin="round"
-          />
-          <circle
-            cx={UAID_LOGO_DOT.cx}
-            cy={UAID_LOGO_DOT.cy}
-            r={UAID_LOGO_DOT.r}
-            fill="#fff"
           />
         </svg>
       </div>
