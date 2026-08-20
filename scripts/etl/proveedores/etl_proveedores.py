@@ -39,6 +39,12 @@ mtodo), asi que no lo uses para derivar la venta.
 
 PROVEEDOR
 ---------
+La MARCA del producto sale de criterios_itm_2 por el mismo mecanismo
+(items.id_cricla2 = criterios_itm_2.id_cricla2 AND items.id_tipo = .id_catego),
+verificado 1:1 contra el POS de mercamio: 48.390 items entran y 48.390 salen,
+cobertura 84,4%. El centinela 'XXXX...' del maestro se descarta como sin marca.
+Ojo: la marca es del PRODUCTO, no del proveedor.
+
 Sale de criterios_itm_1, no de terceros. Join verificado 1:1 sin fan-out:
     items.id_cricla1 = criterios_itm_1.id_cricla1 AND items.id_tipo = criterios_itm_1.id_catego
 Lo confirma la vista informes.v_eos_items del POS, que lo aliasa como `proveedor`.
@@ -254,11 +260,19 @@ SQL_PUENTE = r"""
 SELECT
   BTRIM(i.id_item)                                      AS id_item,
   COALESCE(NULLIF(BTRIM(max(cr.id_cricla1)), ''), '@SP') AS id_cricla1,
-  BTRIM(max(i.descripcion))                             AS descripcion
+  BTRIM(max(i.descripcion))                             AS descripcion,
+  NULLIF(BTRIM(max(i.id_cricla2)), '')                  AS id_cricla2,
+  CASE
+    WHEN BTRIM(max(mk.cmcricla_descripcion)) ~ '^[X ]+$' THEN NULL
+    ELSE NULLIF(BTRIM(max(mk.cmcricla_descripcion)), '')
+  END                                                   AS marca
 FROM public.items i
 LEFT JOIN public.criterios_itm_1 cr
   ON cr.id_cricla1 = i.id_cricla1
  AND cr.id_catego  = i.id_tipo
+LEFT JOIN public.criterios_itm_2 mk
+  ON mk.id_cricla2 = i.id_cricla2
+ AND mk.id_catego  = i.id_tipo
 WHERE BTRIM(COALESCE(i.id_item, '')) <> ''
 GROUP BY BTRIM(i.id_item)
 ORDER BY 1
@@ -268,7 +282,9 @@ DDL_STG_PUENTE = """
 CREATE TEMP TABLE IF NOT EXISTS stg_proveedor_item (
   id_item     text,
   id_cricla1  text,
-  descripcion text
+  descripcion text,
+  id_cricla2  text,
+  marca       text
 );
 """
 
@@ -560,14 +576,18 @@ def cargar_puente(env: dict, empresas, dry_run: bool) -> list:
             with tgt.cursor() as tc:
                 tc.execute("TRUNCATE stg_proveedor_item;")
                 tc.copy_expert(
-                    f"COPY stg_proveedor_item (id_item, id_cricla1, descripcion) FROM STDIN",
+                    "COPY stg_proveedor_item "
+                    "(id_item, id_cricla1, descripcion, id_cricla2, marca) FROM STDIN",
                     io.StringIO(payload),
                 )
                 tc.execute(f"DELETE FROM {TABLE_PUENTE} WHERE empresa = %s;", (empresa,))
                 tc.execute(
                     f"""
-                    INSERT INTO {TABLE_PUENTE} (empresa, id_item, id_cricla1, descripcion, updated_at)
-                    SELECT %s, s.id_item, s.id_cricla1, s.descripcion, now()
+                    INSERT INTO {TABLE_PUENTE}
+                      (empresa, id_item, id_cricla1, descripcion,
+                       id_cricla2, marca, updated_at)
+                    SELECT %s, s.id_item, s.id_cricla1, s.descripcion,
+                           s.id_cricla2, s.marca, now()
                     FROM stg_proveedor_item s;
                     """,
                     (empresa,),
