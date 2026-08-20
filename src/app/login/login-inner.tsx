@@ -116,20 +116,46 @@ export function LoginPageInner() {
             <div className="login-aurora-waves" aria-hidden>
               <svg
                 className="login-aurora-lines"
-                viewBox="0 0 440 520"
+                viewBox="0 0 440 560"
                 preserveAspectRatio="none"
               >
                 <defs>
                   <linearGradient id="loginAuroraStroke" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0" />
-                    <stop offset="30%" stopColor="#22d3ee" stopOpacity="0.7" />
-                    <stop offset="62%" stopColor="#818cf8" stopOpacity="0.65" />
-                    <stop offset="100%" stopColor="#c4b5fd" stopOpacity="0" />
+                    <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.15" />
+                    <stop offset="22%" stopColor="#38bdf8" stopOpacity="1" />
+                    <stop offset="55%" stopColor="#6366f1" stopOpacity="1" />
+                    <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.15" />
+                  </linearGradient>
+                  <linearGradient id="loginAuroraStrokeY" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.15" />
+                    <stop offset="35%" stopColor="#6366f1" stopOpacity="1" />
+                    <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.15" />
                   </linearGradient>
                 </defs>
-                <path d="M20 150 C 90 120, 150 185, 230 145 S 350 115, 420 155" />
-                <path d="M16 250 C 100 215, 170 295, 250 245 S 360 215, 424 255" />
-                <path d="M24 345 C 110 315, 175 390, 255 340 S 355 315, 418 350" />
+                <g className="login-aurora-glow">
+                  <path d="M28 36 C 130 6, 310 6, 412 36" />
+                  <path
+                    d="M18 280 C 8 170, 8 390, 22 500"
+                    stroke="url(#loginAuroraStrokeY)"
+                  />
+                  <path d="M28 524 C 140 554, 300 554, 412 524" />
+                  <path
+                    d="M422 280 C 432 170, 432 390, 418 500"
+                    stroke="url(#loginAuroraStrokeY)"
+                  />
+                </g>
+                <g className="login-aurora-core">
+                  <path d="M28 36 C 130 6, 310 6, 412 36" />
+                  <path
+                    d="M18 280 C 8 170, 8 390, 22 500"
+                    stroke="url(#loginAuroraStrokeY)"
+                  />
+                  <path d="M28 524 C 140 554, 300 554, 412 524" />
+                  <path
+                    d="M422 280 C 432 170, 432 390, 418 500"
+                    stroke="url(#loginAuroraStrokeY)"
+                  />
+                </g>
               </svg>
             </div>
 
