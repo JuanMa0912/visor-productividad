@@ -19,7 +19,7 @@ export function ChecklistSignaturePad({
   const drawing = useRef(false);
   const [inked, setInked] = useState(false);
 
-  const sizeCanvas = useCallback(() => {
+  const paintCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -35,14 +35,19 @@ export function ChecklistSignaturePad({
     ctx.lineWidth = 2.4;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    setInked(false);
   }, []);
 
+  const resetCanvas = useCallback(() => {
+    paintCanvas();
+    setInked(false);
+  }, [paintCanvas]);
+
   useEffect(() => {
-    sizeCanvas();
-    window.addEventListener("resize", sizeCanvas);
-    return () => window.removeEventListener("resize", sizeCanvas);
-  }, [sizeCanvas]);
+    // Solo pinta: inked ya arranca en false, y resetear aqui dispara set-state-in-effect.
+    paintCanvas();
+    window.addEventListener("resize", resetCanvas);
+    return () => window.removeEventListener("resize", resetCanvas);
+  }, [paintCanvas, resetCanvas]);
 
   const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -102,7 +107,7 @@ export function ChecklistSignaturePad({
           <button
             type="button"
             disabled={busy}
-            onClick={sizeCanvas}
+            onClick={resetCanvas}
             className="min-h-11 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 sm:min-h-0 sm:py-1.5 sm:text-xs"
           >
             Borrar
