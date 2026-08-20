@@ -2,30 +2,18 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   UAID_LOGO_GRADIENT,
-  UAID_LOGO_ORBIT_STROKE,
-  UAID_LOGO_ORBITS,
-  UAID_LOGO_U_PATH,
-  UAID_LOGO_U_STROKE,
-  uaidLogoOrbitPaths,
+  UAID_LOGO_PATHS,
+  UAID_LOGO_STROKE,
 } from "./uaid-logo";
 
 describe("uaid logo geometry", () => {
-  it("pone la U en el núcleo y dos órbitas más finas alrededor", () => {
-    assert.match(UAID_LOGO_U_PATH, /^M10\.05 /);
-    assert.equal(UAID_LOGO_ORBITS.length, 2);
-    assert.ok(UAID_LOGO_ORBIT_STROKE < UAID_LOGO_U_STROKE);
-    const orbits = uaidLogoOrbitPaths();
-    assert.equal(orbits.length, 2);
-    for (const path of orbits) {
+  it("es un cerebro en trazo con contorno y pliegues", () => {
+    assert.ok(UAID_LOGO_PATHS.length >= 4);
+    assert.ok(UAID_LOGO_STROKE < 2);
+    for (const path of UAID_LOGO_PATHS) {
       assert.match(path, /^M/);
-      assert.match(path, /A/);
     }
-    const [left, right] = UAID_LOGO_ORBITS;
-    assert.equal(left.rx, right.rx);
-    assert.equal(left.ry, right.ry);
-    assert.equal(left.rotate, -right.rotate);
-    assert.ok(left.rx > left.ry * 3);
-    assert.ok(Math.abs(left.rotate) <= 16);
+    assert.match(UAID_LOGO_PATHS[0], /Z$/);
   });
 
   it("usa la paleta cielo-azul-índigo del login UAID", () => {

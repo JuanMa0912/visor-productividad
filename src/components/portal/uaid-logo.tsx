@@ -3,11 +3,9 @@
 import { useId } from "react";
 import {
   UAID_LOGO_GRADIENT,
-  UAID_LOGO_ORBIT_STROKE,
-  UAID_LOGO_U_PATH,
-  UAID_LOGO_U_STROKE,
+  UAID_LOGO_PATHS,
+  UAID_LOGO_STROKE,
   UAID_LOGO_VIEWBOX,
-  uaidLogoOrbitPaths,
 } from "@/lib/shared/uaid-logo";
 
 type UaidLogoProps = {
@@ -15,35 +13,24 @@ type UaidLogoProps = {
 };
 
 function UaidLogoGlyph() {
-  const orbits = uaidLogoOrbitPaths();
-
   return (
     <g
       fill="none"
       stroke="currentColor"
+      strokeWidth={UAID_LOGO_STROKE}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      {orbits.map((d) => (
-        <path
-          key={d}
-          d={d}
-          strokeWidth={UAID_LOGO_ORBIT_STROKE}
-          opacity={0.82}
-        />
+      {UAID_LOGO_PATHS.map((d) => (
+        <path key={d} d={d} />
       ))}
-      <path
-        d={UAID_LOGO_U_PATH}
-        strokeWidth={UAID_LOGO_U_STROKE}
-        fill="none"
-      />
     </g>
   );
 }
 
 /**
  * Marca UAID a color para la barra del portal.
- * U en el núcleo, dos órbitas finas.
+ * Cerebro en línea blanca.
  */
 export function UaidLogoMark({ className }: UaidLogoProps) {
   const rawId = useId();

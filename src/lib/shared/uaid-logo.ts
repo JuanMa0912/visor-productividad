@@ -1,5 +1,5 @@
 /**
- * Geometría de la marca UAID: U al centro, dos órbitas finas (átomo).
+ * Geometría de la marca UAID: cerebro en trazo blanco.
  * Misma figura en header, favicon y encabezados de impresión.
  */
 
@@ -11,39 +11,16 @@ export const UAID_LOGO_GRADIENT = [
   { offset: "100%", color: "#4338ca" },
 ] as const;
 
-/** Centro óptico de la U (no el del tile). */
-export const UAID_LOGO_CENTER = { x: 16, y: 16.85 };
+export const UAID_LOGO_STROKE = 1.45;
 
-/** U más grande, centrada con las órbitas. */
-export const UAID_LOGO_U_PATH =
-  "M10.05 7.5V20.05C10.05 23.85 12.75 26.15 16 26.15C19.25 26.15 21.95 23.85 21.95 20.05V7.5";
-
-export const UAID_LOGO_U_STROKE = 1.82;
-
-export const UAID_LOGO_ORBIT_STROKE = 0.72;
-
-export const UAID_LOGO_ORBITS = [
-  { rx: 13.15, ry: 3.2, rotate: -15 },
-  { rx: 13.15, ry: 3.2, rotate: 15 },
+/**
+ * Contorno + cisura + pliegues. Pocas curvas para que se lea a 32px.
+ */
+export const UAID_LOGO_PATHS = [
+  "M16 7C20.6 7 24 10.9 24 16.1C24 19.6 22.1 22.5 19.4 24C18.2 24.7 16.9 24.3 16 23.2C15.1 24.3 13.8 24.7 12.6 24C9.9 22.5 8 19.6 8 16.1C8 10.9 11.4 7 16 7Z",
+  "M16 8.6V22.4",
+  "M11.2 12.2C13 13.1 14.4 14.6 14.8 16.8",
+  "M20.8 12.2C19 13.1 17.6 14.6 17.2 16.8",
+  "M11.4 17.6C12.8 18.4 14.1 19.8 14.6 21.4",
+  "M20.6 17.6C19.2 18.4 17.9 19.8 17.4 21.4",
 ] as const;
-
-const round = (value: number) => Number(value.toFixed(2));
-
-/** Elipse completa rotada, como path, para header y favicon. */
-export function uaidLogoOrbitPath(orbit: {
-  rx: number;
-  ry: number;
-  rotate: number;
-}) {
-  const { x: cx, y: cy } = UAID_LOGO_CENTER;
-  const rad = (orbit.rotate * Math.PI) / 180;
-  const x1 = round(cx + orbit.rx * Math.cos(rad));
-  const y1 = round(cy + orbit.rx * Math.sin(rad));
-  const x2 = round(cx - orbit.rx * Math.cos(rad));
-  const y2 = round(cy - orbit.rx * Math.sin(rad));
-  return `M${x1} ${y1}A${orbit.rx} ${orbit.ry} ${orbit.rotate} 1 1 ${x2} ${y2}A${orbit.rx} ${orbit.ry} ${orbit.rotate} 1 1 ${x1} ${y1}`;
-}
-
-export function uaidLogoOrbitPaths() {
-  return UAID_LOGO_ORBITS.map(uaidLogoOrbitPath);
-}

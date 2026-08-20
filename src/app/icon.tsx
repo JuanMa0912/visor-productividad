@@ -1,22 +1,18 @@
 import { ImageResponse } from "next/og";
 import {
   UAID_LOGO_GRADIENT,
-  UAID_LOGO_ORBIT_STROKE,
-  UAID_LOGO_U_PATH,
-  UAID_LOGO_U_STROKE,
-  uaidLogoOrbitPaths,
+  UAID_LOGO_PATHS,
+  UAID_LOGO_STROKE,
 } from "@/lib/shared/uaid-logo";
 
 /**
  * Favicon dinamico del Portal UAID.
- * Misma marca que la barra: U + dos órbitas.
+ * Misma marca que la barra: cerebro en trazo.
  */
 export const size = { width: 32, height: 32 };
 export const contentType = "image/png";
 
 export default function Icon() {
-  const orbits = uaidLogoOrbitPaths();
-
   return new ImageResponse(
     (
       <div
@@ -28,25 +24,17 @@ export default function Icon() {
         }}
       >
         <svg width="32" height="32" viewBox="0 0 32 32">
-          {orbits.map((d) => (
+          {UAID_LOGO_PATHS.map((d) => (
             <path
               key={d}
               d={d}
               fill="none"
               stroke="#fff"
-              strokeWidth={UAID_LOGO_ORBIT_STROKE}
+              strokeWidth={UAID_LOGO_STROKE}
               strokeLinecap="round"
-              opacity={0.82}
+              strokeLinejoin="round"
             />
           ))}
-          <path
-            d={UAID_LOGO_U_PATH}
-            fill="none"
-            stroke="#fff"
-            strokeWidth={UAID_LOGO_U_STROKE}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
         </svg>
       </div>
     ),
