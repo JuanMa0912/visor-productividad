@@ -215,6 +215,29 @@ export const SurtidoAuditModal = ({
     filterDespues,
   ]);
 
+  /**
+   * Evidencias que no cuelgan de ninguna fila visible.
+   *
+   * Subir una foto NO cambia el estado, asi que no genera fila de historial: si
+   * alguien fotografia hoy un item que quedo surtido hace un mes, la evidencia
+   * existe pero el historial no la menciona. Se listan aparte para que se
+   * puedan auditar igual.
+   */
+  const evidenciasSueltas = (() => {
+    const visibles = new Set(
+      filteredRows.map((r) =>
+        makeCeroRotacionEstadoKey(r.empresa, r.sede_id, r.item),
+      ),
+    );
+    return Object.entries(fotoIndex)
+      .filter(([clave]) => !visibles.has(clave))
+      .map(([clave, meta]) => {
+        const [empresa = "", sedeId = "", item = ""] = clave.split("");
+        return { clave, empresa, sedeId, item, updatedAt: meta.updatedAt };
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  })();
+
   const abrirFoto = async (row: SurtidoAuditApiRow) => {
   setFotoAbierta({
     row,
@@ -453,6 +476,52 @@ export const SurtidoAuditModal = ({
               </span>
               .
             </p>
+
+            {evidenciasSueltas.length > 0 ? (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+                <p className="text-xs font-semibold text-amber-900">
+                  {evidenciasSueltas.length === 1
+                    ? "Hay 1 evidencia sin cambio de estado en este periodo"
+                    : `Hay ${evidenciasSueltas.length} evidencias sin cambio de estado en este periodo`}
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-amber-800">
+                  Subir una foto no cambia el estado del ítem, así que no genera
+                  fila en el historial. Estas fotos existen pero su último cambio
+                  de estado quedó fuera del rango consultado.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {evidenciasSueltas.map((ev) => (
+                    <Button
+                      key={ev.clave}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        void abrirFoto({
+                          id: `foto-${ev.clave}`,
+                          empresa: ev.empresa,
+                          sede_id: ev.sedeId,
+                          item: ev.item,
+                          context: "",
+                          estado_anterior: null,
+                          estado_nuevo: "",
+                          changed_at: ev.updatedAt,
+                          changed_by: null,
+                          username: null,
+                        })
+                      }
+                      className="h-7 gap-1.5 rounded-full border-amber-300 bg-white px-3 text-[11px] font-bold text-amber-900 hover:bg-amber-100"
+                    >
+                      <Camera className="h-3.5 w-3.5" aria-hidden />
+                      {ev.item}
+                      <span className="font-normal text-amber-700">
+                        {ev.empresa} · {ev.sedeId}
+                      </span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
         <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200">
