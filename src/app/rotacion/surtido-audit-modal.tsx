@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, X } from "lucide-react";
+import { Camera, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -15,6 +15,7 @@ import {
 import {
   CERO_ROTACION_ESTADO_LABELS,
   CERO_ROTACION_ESTADO_VALUES,
+  makeCeroRotacionEstadoKey,
   parseCeroRotacionEstado,
 } from "@/lib/rotacion/cero-estado";
 import {
@@ -43,6 +44,20 @@ export const SurtidoAuditModal = ({
   const [rows, setRows] = useState<SurtidoAuditApiRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Indice liviano de que items tienen foto: solo mime y fecha, sin el base64.
+   * Sirve para saber en que filas ofrecer el boton sin traerse las imagenes.
+   */
+  const [fotoIndex, setFotoIndex] = useState<
+    Record<string, { mime: string; updatedAt: string }>
+  >({});
+  const [fotoAbierta, setFotoAbierta] = useState<{
+    row: SurtidoAuditApiRow;
+    loading: boolean;
+    error: string | null;
+    dataUrl: string | null;
+    updatedAt: string | null;
+  } | null>(null);
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [filterUser, setFilterUser] = useState("");
@@ -86,6 +101,22 @@ export const SurtidoAuditModal = ({
           throw new Error(data.error ?? "No fue posible cargar el historial.");
         }
         setRows(data.rows ?? []);
+
+        // Indice de fotos, en paralelo. Falla en silencio: si no hay fotos o la
+        // tabla no existe, el historial se sigue viendo igual que antes.
+        const fotoParams = new URLSearchParams();
+        fotoParams.set("start", dateRange.start);
+        fotoParams.set("end", dateRange.end);
+        targetSedeSelections.forEach((sel) =>
+          fotoParams.append("sedeScope", sel.value),
+        );
+        void fetch(`/api/rotacion/restock-fotos?${fotoParams.toString()}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => setFotoIndex(d?.fotos ?? {}))
+          .catch(() => setFotoIndex({}));
         if (data.auditTableMissing && data.message) {
           setError(data.message);
         } else {
@@ -103,7 +134,7 @@ export const SurtidoAuditModal = ({
         }
       }
     })();
-    return () => controller.abort();
+  return () => controller.abort();
   }, [dateRange.start, dateRange.end, targetSedeSelections, router]);
 
   // Las opciones del filtro de sede deben tener llave (empresa, sede_id)
@@ -183,6 +214,62 @@ export const SurtidoAuditModal = ({
     filterAntes,
     filterDespues,
   ]);
+
+  const abrirFoto = async (row: SurtidoAuditApiRow) => {
+  setFotoAbierta({
+    row,
+    loading: true,
+    error: null,
+    dataUrl: null,
+    updatedAt: null,
+  });
+  try {
+    const params = new URLSearchParams();
+    params.set("start", dateRange.start);
+    params.set("end", dateRange.end);
+    params.set("empresa", row.empresa);
+    params.set("sedeId", row.sede_id);
+    params.set("item", row.item);
+    const res = await fetch(
+      `/api/rotacion/restock-fotos?${params.toString()}`,
+      { cache: "no-store" },
+    );
+    const data = (await res.json()) as {
+      foto?: { fotoBase64: string; mime: string; updatedAt: string } | null;
+      error?: string;
+    };
+    if (!res.ok) throw new Error(data.error ?? "No se pudo cargar la foto.");
+    if (!data.foto) {
+      setFotoAbierta((current) =>
+        current
+          ? { ...current, loading: false, error: "Este ítem no tiene foto." }
+          : current,
+      );
+      return;
+    }
+    setFotoAbierta((current) =>
+      current
+        ? {
+            ...current,
+            loading: false,
+            dataUrl: `data:${data.foto!.mime};base64,${data.foto!.fotoBase64}`,
+            updatedAt: data.foto!.updatedAt,
+          }
+        : current,
+    );
+  } catch (err) {
+    setFotoAbierta((current) =>
+      current
+        ? {
+            ...current,
+            loading: false,
+            error:
+              err instanceof Error ? err.message : "No se pudo cargar la foto.",
+          }
+        : current,
+    );
+  }
+  };
 
   return (
     <div
@@ -409,6 +496,9 @@ export const SurtidoAuditModal = ({
                   <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                     Después
                   </TableHead>
+                  <TableHead className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    Evidencia
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -438,6 +528,24 @@ export const SurtidoAuditModal = ({
                     <TableCell className="whitespace-nowrap font-semibold text-slate-900">
                       {formatAuditEstadoLabel(r.estado_nuevo)}
                     </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {fotoIndex[
+                        makeCeroRotacionEstadoKey(r.empresa, r.sede_id, r.item)
+                      ] ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void abrirFoto(r)}
+                          className="h-7 gap-1.5 rounded-full border-amber-200 bg-amber-50/70 px-3 text-[11px] font-bold uppercase tracking-wide text-amber-900 hover:bg-amber-100"
+                        >
+                          <Camera className="h-3.5 w-3.5" aria-hidden />
+                          Auditar
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -445,6 +553,87 @@ export const SurtidoAuditModal = ({
           )}
         </div>
       </div>
+
+      {fotoAbierta ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 p-4"
+          role="dialog"
+          aria-label="Evidencia fotográfica"
+        >
+          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-3">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Evidencia de surtido
+                </span>
+                <span className="truncate font-mono text-sm font-semibold text-slate-900">
+                  {fotoAbierta.row.item}
+                </span>
+                <span className="text-xs text-slate-500">
+                  {fotoAbierta.row.empresa} · {fotoAbierta.row.sede_id} ·{" "}
+                  {fotoAbierta.row.username?.trim() || "sin usuario"}
+                </span>
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={() => setFotoAbierta(null)}
+                aria-label="Cerrar"
+                className="h-8 w-8 shrink-0"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </Button>
+            </div>
+
+            <div className="flex min-h-[220px] items-center justify-center overflow-auto bg-slate-50 p-4">
+              {fotoAbierta.loading ? (
+                <Loader2
+                  className="h-6 w-6 animate-spin text-slate-400"
+                  aria-hidden
+                />
+              ) : fotoAbierta.error ? (
+                <p className="text-sm text-rose-700">{fotoAbierta.error}</p>
+              ) : fotoAbierta.dataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- base64 en memoria, no pasa por el optimizador
+                <img
+                  src={fotoAbierta.dataUrl}
+                  alt={`Evidencia de surtido del ítem ${fotoAbierta.row.item}`}
+                  className="max-h-[62vh] w-auto rounded-lg object-contain"
+                />
+              ) : null}
+            </div>
+
+            <div className="border-t border-slate-100 px-5 py-3">
+              <p className="text-xs text-slate-600">
+                {fotoAbierta.updatedAt ? (
+                  <>
+                    Foto tomada el{" "}
+                    <strong className="font-semibold text-slate-900">
+                      {new Date(fotoAbierta.updatedAt).toLocaleString("es-CO", {
+                        dateStyle: "short",
+                        timeStyle: "short",
+                      })}
+                    </strong>
+                    . El cambio de esta fila es del{" "}
+                    {new Date(fotoAbierta.row.changed_at).toLocaleString("es-CO", {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    })}
+                    .
+                  </>
+                ) : null}
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                Se guarda <strong>una sola foto por ítem y sede</strong>: cada vez
+                que se vuelve a marcar como surtido, la nueva reemplaza a la
+                anterior. Si las dos fechas de arriba no coinciden, esta foto
+                corresponde a un marcaje posterior, no al de esta fila.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };
