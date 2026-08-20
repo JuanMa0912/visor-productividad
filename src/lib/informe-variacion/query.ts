@@ -18,7 +18,10 @@ import {
   informeEmpresaLabel,
 } from "@/lib/informe-variacion/labels";
 import { computeInformePeriods } from "@/lib/informe-variacion/periods";
-import type { InformeDayRangeSpec } from "@/lib/informe-variacion/day-ranges";
+import {
+  splitInformeRangeAgainstClosedCut,
+  type InformeDayRangeSpec,
+} from "@/lib/informe-variacion/day-ranges";
 import {
   computeInformeRangePeriods,
   informeRangeCacheKey,
@@ -27,11 +30,19 @@ import {
   type InformeSelectedRanges,
 } from "@/lib/informe-variacion/date-range";
 import { informePayloadHasComparisonData } from "@/lib/informe-variacion/comparison";
-import { sortInformeSedeCatalog } from "@/lib/informe-variacion/sede-order";
+import {
+  filterInformeVariacionSedes,
+  sortInformeSedeCatalog,
+} from "@/lib/informe-variacion/sede-order";
 import { filterInformePayloadForLineScope } from "@/lib/informe-variacion/informe-line-scope";
 import { applyInformeDayRangeProjection } from "@/lib/informe-variacion/projection";
 import { attachInformeProveedores } from "@/lib/informe-variacion/proveedores";
 import { resolveUserLineCategoryScope } from "@/lib/shared/line-category-scope";
+import { getInformePayloadStd } from "@/lib/informe-variacion/payload-std-server";
+import {
+  addInformePayloadMetrics,
+  sumInformePayloadCurrentValue,
+} from "@/lib/informe-variacion/payload-merge";
 import type { InformePeriods } from "@/lib/informe-variacion/types";
 import type {
   InformeCompactRow,
@@ -62,6 +73,57 @@ export type InformeDbAggRow = {
 
 const toNum = (value: string | number | null | undefined) =>
   Number(value ?? 0) || 0;
+
+const aggRowKey = (row: InformeDbAggRow) =>
+  [
+    row.empresa,
+    row.id_co,
+    row.id_tipo,
+    row.id_linea1,
+    row.id_linea2,
+    row.id_item,
+  ].join("\u0001");
+
+export const mergeInformeDbAggRows = (
+  left: InformeDbAggRow[],
+  right: InformeDbAggRow[],
+): InformeDbAggRow[] => {
+  const map = new Map<string, InformeDbAggRow>();
+  const add = (row: InformeDbAggRow) => {
+    const key = aggRowKey(row);
+    const prev = map.get(key);
+    if (!prev) {
+      map.set(key, {
+        ...row,
+        u_cur: toNum(row.u_cur),
+        u_mom: toNum(row.u_mom),
+        u_yoy: toNum(row.u_yoy),
+        v_cur: toNum(row.v_cur),
+        v_mom: toNum(row.v_mom),
+        v_yoy: toNum(row.v_yoy),
+        m_cur: toNum(row.m_cur),
+        m_mom: toNum(row.m_mom),
+        m_yoy: toNum(row.m_yoy),
+      });
+      return;
+    }
+    prev.u_cur = toNum(prev.u_cur) + toNum(row.u_cur);
+    prev.u_mom = toNum(prev.u_mom) + toNum(row.u_mom);
+    prev.u_yoy = toNum(prev.u_yoy) + toNum(row.u_yoy);
+    prev.v_cur = toNum(prev.v_cur) + toNum(row.v_cur);
+    prev.v_mom = toNum(prev.v_mom) + toNum(row.v_mom);
+    prev.v_yoy = toNum(prev.v_yoy) + toNum(row.v_yoy);
+    prev.m_cur = toNum(prev.m_cur) + toNum(row.m_cur);
+    prev.m_mom = toNum(prev.m_mom) + toNum(row.m_mom);
+    prev.m_yoy = toNum(prev.m_yoy) + toNum(row.m_yoy);
+  };
+  left.forEach(add);
+  right.forEach(add);
+  return [...map.values()];
+};
+
+const sumAggCurrentValue = (rows: InformeDbAggRow[]) =>
+  rows.reduce((sum, row) => sum + toNum(row.v_cur), 0);
 
 /**
  * Placeholders de sede/tipo/linea empiezan DESPUES de `leadingParams`
@@ -705,21 +767,13 @@ export type LoadInformeVariacionOptions = {
   ranges?: InformeSelectedRanges | null;
 };
 
-const finishInformePayload = async (
+const decorateInformePayload = async (
   client: ClientBase,
-  dbRows: InformeDbAggRow[],
-  periods: InformePeriods,
-  allowedSedeKeys: string[] | null,
+  payload: InformeVariacionPayload,
   options: LoadInformeVariacionOptions,
   year?: number,
   month?: number,
 ): Promise<InformeVariacionPayload> => {
-  const payload = buildInformeVariacionPayload(
-    dbRows,
-    periods,
-    allowedSedeKeys,
-    options.kind ?? "default",
-  );
   const lineScope = {
     ...resolveUserLineCategoryScope(null),
     forcedMargenTipos: options.forcedMargenTipos ?? null,
@@ -749,6 +803,24 @@ const finishInformePayload = async (
     month,
     options.dayRange,
   );
+};
+
+const finishInformePayload = async (
+  client: ClientBase,
+  dbRows: InformeDbAggRow[],
+  periods: InformePeriods,
+  allowedSedeKeys: string[] | null,
+  options: LoadInformeVariacionOptions,
+  year?: number,
+  month?: number,
+): Promise<InformeVariacionPayload> => {
+  const payload = buildInformeVariacionPayload(
+    dbRows,
+    periods,
+    allowedSedeKeys,
+    options.kind ?? "default",
+  );
+  return decorateInformePayload(client, payload, options, year, month);
 };
 
 export const loadInformeVariacionRangePayload = async (
@@ -788,6 +860,92 @@ export const loadInformeVariacionPayload = async (
       options,
     );
   }
+
+  const split =
+    options.kind === "dinastia" || !options.dayRange
+      ? { closed: null, leftover: null }
+      : splitInformeRangeAgainstClosedCut(options.dayRange);
+
+  if (split.closed && split.leftover) {
+    const closedPeriods = computeInformePeriods(
+      year,
+      month,
+      split.closed,
+      options.compare,
+    );
+    const leftoverPeriods = computeInformePeriods(
+      year,
+      month,
+      split.leftover,
+      options.compare,
+    );
+    const fullPeriods = computeInformePeriods(
+      year,
+      month,
+      options.dayRange,
+      options.compare,
+    );
+    const queryKind = { kind: options.kind };
+    const closedRows = await queryInformeVariacionRows(
+      client,
+      closedPeriods,
+      allowedSedeKeys,
+      options.forcedMargenTipos ?? null,
+      options.forcedMargenLineas ?? null,
+      options.excludedMargenTipos ?? null,
+      queryKind,
+    );
+    const leftoverRows = await queryInformeVariacionRows(
+      client,
+      leftoverPeriods,
+      allowedSedeKeys,
+      options.forcedMargenTipos ?? null,
+      options.forcedMargenLineas ?? null,
+      options.excludedMargenTipos ?? null,
+      queryKind,
+    );
+    const stdClosed = await getInformePayloadStd(
+      client,
+      year,
+      month,
+      split.closed.id,
+    );
+    const liveClosedValue = sumAggCurrentValue(closedRows);
+    const stdClosedValue = stdClosed
+      ? sumInformePayloadCurrentValue(stdClosed)
+      : 0;
+
+    if (stdClosed && stdClosedValue > liveClosedValue * 1.15) {
+      const scopedStd =
+        allowedSedeKeys == null
+          ? stdClosed
+          : filterInformeVariacionSedes(stdClosed, (sede) =>
+              allowedSedeKeys.includes(sede.key),
+            );
+      const leftoverPayload = buildInformeVariacionPayload(
+        leftoverRows,
+        leftoverPeriods,
+        allowedSedeKeys,
+        options.kind ?? "default",
+      );
+      const merged = addInformePayloadMetrics(
+        { ...scopedStd, periods: fullPeriods },
+        leftoverPayload,
+      );
+      return decorateInformePayload(client, merged, options, year, month);
+    }
+
+    return finishInformePayload(
+      client,
+      mergeInformeDbAggRows(closedRows, leftoverRows),
+      fullPeriods,
+      allowedSedeKeys,
+      options,
+      year,
+      month,
+    );
+  }
+
   const periods = computeInformePeriods(
     year,
     month,

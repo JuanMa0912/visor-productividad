@@ -46,7 +46,7 @@ type InformeMeta = {
   minDate?: string | null;
 };
 
-const INFORME_SESSION_CACHE_BASE = "vp-informe-variacion:v7:";
+const INFORME_SESSION_CACHE_BASE = "vp-informe-variacion:v8:";
 const INFORME_FETCH_TIMEOUT_MS = 120_000;
 
 const sessionStoragePrefixForUser = (

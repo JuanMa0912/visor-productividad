@@ -284,7 +284,8 @@ export async function GET(request: Request) {
       dataKind === "default" &&
       !forceRefresh &&
       !customCompare &&
-      !rangeId.startsWith("proj-");
+      !rangeId.startsWith("proj-") &&
+      !rangeId.startsWith("mtd-");
     if (useStd) {
       const stdClient = await (await getDbPool()).connect();
       try {

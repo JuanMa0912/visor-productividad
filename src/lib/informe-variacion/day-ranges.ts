@@ -12,6 +12,47 @@ export const INFORME_DAY_RANGES = [
 export type InformeClosedDayRangeId = (typeof INFORME_DAY_RANGES)[number]["id"];
 
 /**
+ * Último acumulado Excel 1→C estrictamente anterior a `beforeDay`.
+ * Ej.: beforeDay=19 → 1-14. Sirve para armar MTD como corte cerrado + días extra.
+ */
+export const lastClosedCumulativeInformeRange = (
+  beforeDay: number,
+): (typeof INFORME_DAY_RANGES)[number] | null => {
+  if (!Number.isInteger(beforeDay) || beforeDay < 2) return null;
+  const closed = INFORME_DAY_RANGES.filter(
+    (range) => range.fromDay === 1 && range.toDay != null && range.toDay < beforeDay,
+  );
+  if (closed.length === 0) return null;
+  return closed.reduce((best, range) =>
+    (range.toDay ?? 0) > (best.toDay ?? 0) ? range : best,
+  );
+};
+
+export const splitInformeRangeAgainstClosedCut = (
+  range: InformeDayRangeSpec,
+): {
+  closed: InformeDayRangeSpec | null;
+  leftover: InformeDayRangeSpec | null;
+} => {
+  const actualToDay = range.projection?.actualToDay ?? range.toDay;
+  if (range.fromDay !== 1 || actualToDay == null || actualToDay < 2) {
+    return { closed: null, leftover: null };
+  }
+  const closed = lastClosedCumulativeInformeRange(actualToDay);
+  if (!closed || closed.toDay == null) return { closed: null, leftover: null };
+  if (closed.toDay >= actualToDay) return { closed: null, leftover: null };
+  return {
+    closed: { ...closed },
+    leftover: {
+      id: range.id,
+      label: `${closed.toDay + 1} al ${actualToDay}`,
+      fromDay: closed.toDay + 1,
+      toDay: actualToDay,
+    },
+  };
+};
+
+/**
  * Rango de UN SOLO dia: `d-05` = solo el 5 del mes seleccionado.
  *
  * Se modela como un rango normal con `fromDay === toDay`, asi que

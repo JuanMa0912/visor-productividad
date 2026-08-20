@@ -6,8 +6,10 @@ import {
   getInformeCortesDayRanges,
   buildInformeSingleDayRange,
   buildPreciseMtdInformeDayRange,
+  lastClosedCumulativeInformeRange,
   parseInformeDayRangeId,
   payloadMatchesInformeSelection,
+  splitInformeRangeAgainstClosedCut,
 } from "@/lib/informe-variacion/day-ranges";
 import { computeInformePeriods } from "@/lib/informe-variacion/periods";
 
@@ -94,6 +96,17 @@ describe("getAvailableInformeDayRanges", () => {
     const ids = cortes.map((range) => range.id);
     assert.ok(ids.includes("proj-hoy-21"));
     assert.equal(ids.includes("proj-1-21"), false);
+  });
+
+  it("parte un MTD abierto contra el último corte Excel cerrado", () => {
+    const closed = lastClosedCumulativeInformeRange(19);
+    assert.equal(closed?.id, "1-14");
+    const mtd = parseInformeDayRangeId("mtd-19");
+    assert.ok(mtd);
+    const split = splitInformeRangeAgainstClosedCut(mtd);
+    assert.equal(split.closed?.id, "1-14");
+    assert.equal(split.leftover?.fromDay, 15);
+    assert.equal(split.leftover?.toDay, 19);
   });
 
   it("normaliza maxDate ISO desde PostgreSQL", () => {

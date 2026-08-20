@@ -43,7 +43,7 @@ export const buildInformeCacheKey = (
       ? [...allowedSedeKeys].sort().join(",")
       : "*";
   const range = dayRangeId?.trim() || "1-eom";
-  return `informe:v2:${year}:${month}:range=${range}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}${informeCompareCacheSuffix(year, month, compare)}`;
+  return `informe:v3:${year}:${month}:range=${range}:${sedes}${scopeCacheSuffix(forcedMargenTipos, forcedMargenLineas, excludedMargenTipos)}${informeCompareCacheSuffix(year, month, compare)}`;
 };
 
 export const getCachedInformePayload = (
