@@ -59,6 +59,7 @@ type ResolvedItemProveedor = {
   nit: string | null;
   fromTercero: boolean;
   qtyByCo?: Map<string, number>;
+  valByCo?: Map<string, number>;
 };
 
 const resolveItemProveedorRow = (row: {
@@ -98,10 +99,16 @@ const resolveItemProveedorRow = (row: {
 };
 
 type OcLineProveedor = ResolvedItemProveedor & {
+  /** Sedes donde este proveedor surte el item en la VENTANA ancha. Solo identidad. */
   idCos: Set<string>;
+  /** Kilos del RANGO pedido por el usuario. Es lo unico que se pinta. */
   qtyByCo: Map<string, number>;
+  /** Pesos comprados en el RANGO, de los MISMOS documentos que los kilos. */
+  valByCo: Map<string, number>;
   invQtyByCo: Map<string, number>;
   poQtyByCo: Map<string, number>;
+  invValByCo: Map<string, number>;
+  poValByCo: Map<string, number>;
 };
 
 /**
@@ -111,8 +118,11 @@ type OcLineProveedor = ResolvedItemProveedor & {
 async function queryOrdenCompraLineaProveedores(
   client: PoolClient,
   itemIds: string[],
+  /** Inicio de la ventana ancha: solo decide QUIENES surten el item. */
   fromCompact: string,
   toCompact: string,
+  /** Inicio del rango que pidio el usuario: decide CUANTOS kilos se pintan. */
+  rangeFromCompact: string,
 ): Promise<Map<string, OcLineProveedor[]>> {
   const map = new Map<string, OcLineProveedor[]>();
   if (itemIds.length === 0) return map;
@@ -134,6 +144,8 @@ async function queryOrdenCompraLineaProveedores(
     terc_nit: string | null;
     tipdoc: string;
     qty: string | number | null;
+    valor: string | number | null;
+    in_range: boolean;
   }>(
     `
     SELECT
@@ -147,14 +159,24 @@ async function queryOrdenCompraLineaProveedores(
       NULLIF(BTRIM(terc_nombre), '') AS terc_nombre,
       NULLIF(BTRIM(terc_nit), '') AS terc_nit,
       UPPER(BTRIM(tipdoc)) AS tipdoc,
-      ${ocEntradaQtySql("tipdoc")} AS qty
+      ${ocEntradaQtySql("tipdoc")} AS qty,
+      -- Valor efectivo. En FR/OC el tot_bruto es lo PEDIDO y la cantidad que
+      -- cuenta es lo RECIBIDO: dividir uno entre otro sin prorratear infla el
+      -- costo (medido: FR-036887 daba 26.786/kg contra 4.500/kg reales).
+      CASE
+        WHEN UPPER(BTRIM(tipdoc)) IN ('ET', 'EF') THEN COALESCE(tot_bruto, 0)
+        WHEN COALESCE(cantidad, 0) > 0
+          THEN COALESCE(tot_bruto, 0) * (COALESCE(cantidad_ent, 0) / cantidad)
+        ELSE 0
+      END AS valor,
+      (BTRIM(fecha_dcto) >= $4) AS in_range
     FROM orden_compra_linea
     WHERE BTRIM(id_item) = ANY($1::text[])
       AND fecha_dcto >= $2
       AND fecha_dcto <= $3
       AND ${ocEntradaTipdocSql("empresa", "tipdoc")}
     `,
-    [itemIds, fromCompact, toCompact],
+    [itemIds, fromCompact, toCompact, rangeFromCompact],
   );
 
   for (const row of res.rows) {
@@ -188,17 +210,25 @@ async function queryOrdenCompraLineaProveedores(
         fromTercero: true,
         idCos: new Set(),
         qtyByCo: new Map(),
+        valByCo: new Map(),
         invQtyByCo: new Map(),
         poQtyByCo: new Map(),
+        invValByCo: new Map(),
+        poValByCo: new Map(),
       };
       list.push(prov);
     }
     if (!idCo) continue;
+    // La ventana ancha solo sirve para saber que este proveedor surte esta sede.
+    prov.idCos.add(idCo);
+    if (!row.in_range) continue;
     const qty = toNum(row.qty);
     if (!(qty > 0)) continue;
     const isInv = tipdoc === "ET" || tipdoc === "EF";
     const bucket = isInv ? prov.invQtyByCo : prov.poQtyByCo;
     bucket.set(idCo, (bucket.get(idCo) ?? 0) + qty);
+    const valBucket = isInv ? prov.invValByCo : prov.poValByCo;
+    valBucket.set(idCo, (valBucket.get(idCo) ?? 0) + Math.max(0, toNum(row.valor)));
   }
 
   for (const list of map.values()) {
@@ -210,16 +240,26 @@ async function queryOrdenCompraLineaProveedores(
     }
     for (const prov of list) {
       prov.qtyByCo = new Map();
+      prov.valByCo = new Map();
       for (const [co, qty] of prov.invQtyByCo) {
-        if (qty > 0) prov.qtyByCo.set(co, qty);
+        if (qty > 0) {
+          prov.qtyByCo.set(co, qty);
+          prov.valByCo.set(co, prov.invValByCo.get(co) ?? 0);
+        }
       }
       for (const [co, qty] of prov.poQtyByCo) {
+        // Guarda anti doble conteo: si la entrada ET/EF ya esta en el rango,
+        // el pedido FR/OC del mismo recibo no se suma encima. El valor sigue
+        // exactamente la misma decision, para que costo y kilos salgan siempre
+        // de los mismos documentos.
         if (invCos.has(co) || !(qty > 0)) continue;
         prov.qtyByCo.set(co, (prov.qtyByCo.get(co) ?? 0) + qty);
+        prov.valByCo.set(co, (prov.valByCo.get(co) ?? 0) + (prov.poValByCo.get(co) ?? 0));
       }
-      prov.idCos = new Set(prov.qtyByCo.keys());
     }
-    const kept = list.filter((prov) => prov.qtyByCo.size > 0);
+    // Se conserva al proveedor aunque no tenga kilos en el rango: su celda queda
+    // vacia, pero el desglose sigue diciendo quien surte el item.
+    const kept = list.filter((prov) => prov.idCos.size > 0);
     if (kept.length !== list.length) {
       list.length = 0;
       list.push(...kept);
@@ -267,6 +307,14 @@ const unitPrice = (money: number, units: number) =>
 
 const marginPct = (sales: number, cost: number) =>
   sales > 0 ? ((sales - cost) / sales) * 100 : 0;
+
+/**
+ * Margen al que SALDRIA vendido: precio de venta por kilo contra costo de
+ * entrada por kilo. Es lo unico atribuible a un proveedor; la venta completa
+ * del item en la sede no lo es, porque no se puede repartir entre proveedores.
+ */
+export const projectedMarginPct = (pvu: number, pcu: number) =>
+  pvu > 0 && pcu > 0 ? ((pvu - pcu) / pvu) * 100 : 0;
 
 /** Sedes tienda (sin Dinastía / plantas), izq→der como SEDE_ORDER del portal. */
 export const prototypeSedeColumns = (): PreciosProveedorSedeColumn[] =>
@@ -786,12 +834,24 @@ export const queryPreciosProveedorMatrix = async (
       FROM agg a
       ${proveedorJoin}
     ),
+    -- El top-N se calcula POR EMPRESA, no sobre la union. Antes ordenaba por
+    -- venta sobre todas las empresas juntas, asi que al marcar una segunda
+    -- empresa la mas grande copaba el cupo y la otra PERDIA filas: agregar un
+    -- filtro hacia desaparecer datos en vez de sumarlos.
     top_items AS (
-      SELECT id_item
-      FROM enriched
-      GROUP BY id_item
-      ORDER BY SUM(ventas_netas) DESC
-      LIMIT $3
+      SELECT DISTINCT id_item
+      FROM (
+        SELECT
+          empresa_norm,
+          id_item,
+          ROW_NUMBER() OVER (
+            PARTITION BY empresa_norm
+            ORDER BY SUM(ventas_netas) DESC, id_item
+          ) AS rn
+        FROM enriched
+        GROUP BY empresa_norm, id_item
+      ) ranked
+      WHERE rn <= $3
     )
     SELECT e.*
     FROM enriched e
@@ -1319,6 +1379,7 @@ export async function queryPreciosProveedorItemExpand(
     variantItemIds,
     ocFromCompact,
     toCompact,
+    fromCompact,
   );
 
   const expandMap = new Map<string, PreciosProveedorExpandRow>();
@@ -1394,9 +1455,18 @@ export async function queryPreciosProveedorItemExpand(
     const pcu = costoEntrada.get(`${variantId}::${sedeKey}`) ?? 0;
     const variantLabel = String(row.label ?? variantId).trim() || variantId;
     for (const prov of provsForSede(variantId, empresa, idCo)) {
-      const kilos = prov.qtyByCo?.get(idCo) ?? 0;
-      const units = kilos > 0 ? kilos : toNum(row.cantidad);
-      const cost = units > 0 && pcu > 0 ? units * pcu : 0;
+      // Kilos COMPRADOS dentro del rango pedido. Si no hubo entrada en ese
+      // rango la celda queda vacia: antes se caia a los kilos VENDIDOS del
+      // item, que son otra magnitud y se repetian identicos en cada proveedor.
+      const units = prov.qtyByCo?.get(idCo) ?? 0;
+      // Costo de ESTE proveedor, de los mismos documentos que los kilos. Antes
+      // se leia un unico casillero por (item, sede) sin dimension de proveedor,
+      // asi que todos los proveedores de una sede mostraban el mismo $/kg.
+      const provValue = prov.valByCo?.get(idCo) ?? 0;
+      const provPcu = units > 0 && provValue > 0 ? provValue / units : 0;
+      const cellPcu = provPcu > 0 ? provPcu : pcu;
+      const cost =
+        provValue > 0 ? provValue : units > 0 && pcu > 0 ? units * pcu : 0;
       upsertExpandCell(prov, variantId, variantLabel, empresa, {
         rowId: "",
         sedeKey,
@@ -1404,8 +1474,8 @@ export async function queryPreciosProveedorItemExpand(
         sales,
         cost,
         pvu,
-        pcu,
-        margenPct: marginPct(sales > 0 ? sales : pvu * units, cost),
+        pcu: cellPcu,
+        margenPct: projectedMarginPct(pvu, cellPcu),
       });
     }
   }
