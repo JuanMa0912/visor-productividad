@@ -22,8 +22,8 @@ export const UAID_LOGO_U_STROKE = 1.62;
 export const UAID_LOGO_ORBIT_STROKE = 0.72;
 
 export const UAID_LOGO_ORBITS = [
-  { rx: 12.1, ry: 4.85, rotate: -38 },
-  { rx: 12.1, ry: 4.85, rotate: 52 },
+  { rx: 12.8, ry: 3.65, rotate: -20 },
+  { rx: 12.8, ry: 3.65, rotate: 20 },
 ] as const;
 
 const round = (value: number) => Number(value.toFixed(2));

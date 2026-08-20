@@ -7,6 +7,7 @@ import {
   isSessionIdle,
   loginUrlAfterIdle,
   shouldRecordActivity,
+  shouldResetIdleClockOnAuthChange,
 } from "./session-idle";
 
 describe("cierre de sesion por inactividad", () => {
@@ -37,5 +38,12 @@ describe("cierre de sesion por inactividad", () => {
 
   it("manda al login con razon de inactividad", () => {
     assert.equal(loginUrlAfterIdle(), `/login?razon=${LOGIN_IDLE_QUERY}`);
+  });
+
+  it("reinicia el reloj idle solo al pasar a autenticado", () => {
+    assert.equal(shouldResetIdleClockOnAuthChange(false, true), true);
+    assert.equal(shouldResetIdleClockOnAuthChange(true, true), false);
+    assert.equal(shouldResetIdleClockOnAuthChange(true, false), false);
+    assert.equal(shouldResetIdleClockOnAuthChange(false, false), false);
   });
 });

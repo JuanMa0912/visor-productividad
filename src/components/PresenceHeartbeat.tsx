@@ -7,6 +7,7 @@ import {
   isSessionIdle,
   loginUrlAfterIdle,
   shouldRecordActivity,
+  shouldResetIdleClockOnAuthChange,
 } from "@/lib/auth/session-idle";
 
 const HEARTBEAT_INTERVAL_MS = 60_000;
@@ -32,6 +33,7 @@ export default function PresenceHeartbeat() {
   const { status, logout } = useAuth();
   const isAuthenticated = status === "authenticated";
   const lastActivityRef = useRef<number>(Date.now());
+  const wasAuthenticatedRef = useRef(false);
   const inFlightRef = useRef(false);
   const cancelledRef = useRef(false);
   const loggingOutRef = useRef(false);
@@ -41,7 +43,12 @@ export default function PresenceHeartbeat() {
   const endIdleSession = useCallback(() => {
     if (loggingOutRef.current) return;
     loggingOutRef.current = true;
-    void logoutRef.current({ redirectTo: loginUrlAfterIdle() });
+    // Recarga completa a /login: PresenceHeartbeat vive en el layout y, con
+    // navegacion SPA, conservaba el reloj idle viejo. Eso expulsaba de nuevo
+    // al entrar, hasta un F5.
+    void logoutRef.current({ redirectTo: null }).finally(() => {
+      window.location.assign(loginUrlAfterIdle());
+    });
   }, []);
 
   const sendHeartbeat = useCallback(
@@ -97,6 +104,16 @@ export default function PresenceHeartbeat() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (
+      shouldResetIdleClockOnAuthChange(
+        wasAuthenticatedRef.current,
+        isAuthenticated,
+      )
+    ) {
+      lastActivityRef.current = Date.now();
+      loggingOutRef.current = false;
+    }
+    wasAuthenticatedRef.current = isAuthenticated;
     if (!isAuthenticated) return;
     cancelledRef.current = false;
     loggingOutRef.current = false;

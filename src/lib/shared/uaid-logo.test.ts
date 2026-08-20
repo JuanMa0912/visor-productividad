@@ -20,6 +20,12 @@ describe("uaid logo geometry", () => {
       assert.match(path, /^M/);
       assert.match(path, /A/);
     }
+    const [left, right] = UAID_LOGO_ORBITS;
+    assert.equal(left.rx, right.rx);
+    assert.equal(left.ry, right.ry);
+    assert.equal(left.rotate, -right.rotate);
+    assert.ok(left.rx > left.ry * 2);
+    assert.ok(Math.abs(left.rotate) <= 22);
   });
 
   it("usa la paleta cielo-azul-índigo del login UAID", () => {

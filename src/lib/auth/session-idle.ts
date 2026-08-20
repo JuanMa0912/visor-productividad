@@ -22,3 +22,14 @@ export const shouldRecordActivity = (
   lastActivityAtMs: number,
   nowMs = Date.now(),
 ): boolean => !isSessionIdle(lastActivityAtMs, nowMs);
+
+/**
+ * PresenceHeartbeat vive en el layout y no se desmonta al ir a /login.
+ * Si no se reinicia el reloj al volver a autenticar, un idle previo
+ * (p. ej. timeout de 5 min) sigue “activo” y vuelve a cerrar la sesión
+ * apenas el usuario entra, hasta que recarga con F5.
+ */
+export const shouldResetIdleClockOnAuthChange = (
+  wasAuthenticated: boolean,
+  isAuthenticated: boolean,
+): boolean => isAuthenticated && !wasAuthenticated;
