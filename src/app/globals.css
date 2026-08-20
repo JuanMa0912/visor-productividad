@@ -309,17 +309,15 @@ input.vp-sync-autofill:-webkit-autofill {
 
 .login-form-uaid-spray {
   color: #4338ca;
-  transform: translate(4px, 3px) rotate(-1.6deg);
-  opacity: 0.72;
+  transform: translate(1.5px, 1.5px);
+  opacity: 0.38;
   z-index: 0;
-  -webkit-text-stroke: 5px rgba(67, 56, 202, 0.55);
-  paint-order: stroke fill;
 }
 
 .login-form-uaid-drip {
   color: #38bdf8;
-  transform: translate(-3px, -2px) rotate(1.2deg);
-  opacity: 0.7;
+  transform: translate(-1px, -1px);
+  opacity: 0.32;
   z-index: 0;
 }
 
@@ -329,16 +327,17 @@ input.vp-sync-autofill:-webkit-autofill {
   background-image:
     linear-gradient(
       105deg,
-      transparent 35%,
-      rgba(255, 255, 255, 0.78) 50%,
-      transparent 65%
+      transparent 38%,
+      rgba(255, 255, 255, 0.42) 50%,
+      transparent 62%
     ),
-    linear-gradient(90deg, #0ea5e9 0%, #2563eb 48%, #4f46e5 100%);
+    linear-gradient(90deg, #0284c7 0%, #1d4ed8 48%, #4338ca 100%);
   background-size: 220% 100%, 100% 100%;
   background-position: -120% 0, 0 0;
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
+  filter: drop-shadow(0 1px 0 rgba(15, 23, 42, 0.28));
   animation: login-form-uaid-sheen 4.8s ease-in-out infinite;
 }
 

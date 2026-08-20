@@ -126,19 +126,14 @@ export function LoginPageInner() {
               <span className="block text-lg font-semibold text-slate-700 sm:text-xl">
                 Bienvenido a
               </span>
-              <span className="mt-1 flex flex-wrap items-baseline gap-x-3">
-                <span className="login-form-uaid" aria-label="UAID">
-                  <span className="login-form-uaid-spray" aria-hidden>
-                    UAID
-                  </span>
-                  <span className="login-form-uaid-drip" aria-hidden>
-                    UAID
-                  </span>
-                  <span className="login-form-uaid-word">UAID</span>
+              <span className="login-form-uaid mt-1 inline-block" aria-label="UAID">
+                <span className="login-form-uaid-spray" aria-hidden>
+                  UAID
                 </span>
-                <span className="text-slate-800">
-                  {PORTAL_APP_VERSION.replace(/^v/i, "")}
+                <span className="login-form-uaid-drip" aria-hidden>
+                  UAID
                 </span>
+                <span className="login-form-uaid-word">UAID</span>
               </span>
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600">
