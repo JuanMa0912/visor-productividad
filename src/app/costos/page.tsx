@@ -808,8 +808,9 @@ export default function CostosPage() {
                 Matriz · ítem × sede
               </h2>
               <p className="text-xs text-slate-500">
-                Top {matrix?.itemLimit ?? 40} ítems por venta neta · clic:
-                costo de entrada · doble clic: $/kg, kilos y margen ·{" "}
+                Top {matrix?.itemLimit ?? 40} ítems por venta neta{" "}
+                <strong>de cada empresa</strong> · no es el total de la compañía ·
+                clic: costo de entrada · doble clic: $/kg, kilos y margen ·{" "}
                 {matrix
                   ? `${matrix.elapsedMs} ms servidor · ${matrix.rows.length} filas`
                   : loading

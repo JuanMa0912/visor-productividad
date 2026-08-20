@@ -807,12 +807,24 @@ export const queryPreciosProveedorMatrix = async (
       FROM agg a
       ${proveedorJoin}
     ),
+    -- El top-N se calcula POR EMPRESA, no sobre la union. Antes ordenaba por
+    -- venta sobre todas las empresas juntas, asi que al marcar una segunda
+    -- empresa la mas grande copaba el cupo y la otra PERDIA filas: agregar un
+    -- filtro hacia desaparecer datos en vez de sumarlos.
     top_items AS (
-      SELECT id_item
-      FROM enriched
-      GROUP BY id_item
-      ORDER BY SUM(ventas_netas) DESC
-      LIMIT $3
+      SELECT DISTINCT id_item
+      FROM (
+        SELECT
+          empresa_norm,
+          id_item,
+          ROW_NUMBER() OVER (
+            PARTITION BY empresa_norm
+            ORDER BY SUM(ventas_netas) DESC, id_item
+          ) AS rn
+        FROM enriched
+        GROUP BY empresa_norm, id_item
+      ) ranked
+      WHERE rn <= $3
     )
     SELECT e.*
     FROM enriched e
