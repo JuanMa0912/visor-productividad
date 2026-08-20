@@ -8,7 +8,7 @@ import { useRequireAuth } from "@/lib/auth/auth-context";
 import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { readInformeApiResponse } from "@/lib/informe-variacion/read-api-response";
-import { InformeVariacionBoard } from "@/app/informe-variacion/informe-variacion-board";
+import { InformeVariacionBoard, BOARD_TABS, type InformeBoardTab } from "@/app/informe-variacion/informe-variacion-board";
 import { prefetchWarmInformeRange } from "@/lib/informe-variacion/use-matrix-agg-cache";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import {
@@ -23,10 +23,23 @@ import {
 import {
   alignPreviousYearRange,
   compactToIso,
+  defaultInformeMonthToDateRanges,
   defaultInformeYtdRanges,
   isoToCompact,
   type InformeSelectedRanges,
 } from "@/lib/informe-variacion/date-range";
+import {
+  defaultInformeDayRangeId,
+  getInformeCortesDayRanges,
+  payloadMatchesInformeSelection,
+  type InformeDayRangeId,
+} from "@/lib/informe-variacion/day-ranges";
+import {
+  defaultInformeYearMonth,
+  parseYearMonthInput,
+  yearMonthToInputValue,
+} from "@/lib/informe-variacion/periods";
+import { cn } from "@/lib/shared/utils";
 
 type InformeMeta = {
   maxDate: string | null;
@@ -64,6 +77,13 @@ const buildRangeCacheKey = (
   scopeSuffix = "",
 ) =>
   `${ranges.currentFrom}:${ranges.currentTo}:${ranges.previousFrom}:${ranges.previousTo}${scopeSuffix}`;
+
+const buildCutsCacheKey = (
+  year: number,
+  month: number,
+  rangeId: string,
+  scopeSuffix = "",
+) => `cuts:${year}:${month}:${rangeId}${scopeSuffix}`;
 
 const readSessionInforme = (
   storagePrefix: string,
@@ -196,6 +216,14 @@ export default function InformeVariacionPage() {
   const [minDate, setMinDate] = useState<string | null>(null);
   const [draft, setDraft] = useState<InformeSelectedRanges | null>(null);
   const [applied, setApplied] = useState<InformeSelectedRanges | null>(null);
+  const [boardTab, setBoardTab] = useState<InformeBoardTab>("reporte");
+  const [monthInput, setMonthInput] = useState("");
+  const [dayRangeId, setDayRangeId] = useState<InformeDayRangeId | "">("");
+  const [rankingDraft, setRankingDraft] = useState<InformeSelectedRanges | null>(
+    null,
+  );
+  const [rankingApplied, setRankingApplied] =
+    useState<InformeSelectedRanges | null>(null);
   const [payload, setPayload] = useState<InformeVariacionPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -237,14 +265,24 @@ export default function InformeVariacionPage() {
         const max = data.maxDate;
         setMaxDate(max);
         setMinDate(data.minDate ?? null);
-        const next = defaultInformeYtdRanges(max);
-        setDraft(next);
-        setApplied(next);
+        const ytd = defaultInformeYtdRanges(max);
+        const monthToDate = defaultInformeMonthToDateRanges(max);
+        const ym = defaultInformeYearMonth(max);
+        setDraft(ytd);
+        setApplied(ytd);
+        setRankingDraft(monthToDate);
+        setRankingApplied(monthToDate);
+        setMonthInput(yearMonthToInputValue(ym.year, ym.month));
       } catch {
         if (!cancelled) {
-          const next = defaultInformeYtdRanges(null);
-          setDraft(next);
-          setApplied(next);
+          const ytd = defaultInformeYtdRanges(null);
+          const monthToDate = defaultInformeMonthToDateRanges(null);
+          const ym = defaultInformeYearMonth(null);
+          setDraft(ytd);
+          setApplied(ytd);
+          setRankingDraft(monthToDate);
+          setRankingApplied(monthToDate);
+          setMonthInput(yearMonthToInputValue(ym.year, ym.month));
         }
       } finally {
         if (!cancelled) setMetaLoading(false);
@@ -258,6 +296,23 @@ export default function InformeVariacionPage() {
 
   const minIso = minDate ? compactToIso(minDate) : undefined;
   const maxIso = maxDate ? compactToIso(maxDate) : undefined;
+  const parsedMonth = useMemo(
+    () => parseYearMonthInput(monthInput),
+    [monthInput],
+  );
+  const availableDayRanges = useMemo(() => {
+    if (!parsedMonth) return [];
+    return getInformeCortesDayRanges(
+      parsedMonth.year,
+      parsedMonth.month,
+      new Date(),
+      maxDate,
+    );
+  }, [maxDate, parsedMonth]);
+  const effectiveDayRangeId =
+    dayRangeId && availableDayRanges.some((range) => range.id === dayRangeId)
+      ? dayRangeId
+      : defaultInformeDayRangeId(availableDayRanges);
 
   const storePayload = useCallback(
     (ranges: InformeSelectedRanges, data: InformeVariacionPayload) => {
@@ -362,6 +417,155 @@ export default function InformeVariacionPage() {
     [readCachedPayload, router, scopeCacheSuffix, storePayload, tenantEmpresaParam],
   );
 
+  const fetchCuts = useCallback(
+    async (
+      year: number,
+      month: number,
+      rangeId: InformeDayRangeId,
+      signal: AbortSignal,
+      options: { force?: boolean } = {},
+    ): Promise<InformeVariacionPayload> => {
+      const key = buildCutsCacheKey(year, month, rangeId, scopeCacheSuffix);
+      if (!options.force) {
+        const memoryHit = memoryCacheRef.current.get(key);
+        if (memoryHit) return memoryHit;
+        const sessionHit = readSessionInforme(sessionStoragePrefix, key);
+        if (sessionHit) {
+          const scoped = filterInformePayloadForLineScope(
+            sessionHit,
+            lineCategoryScope,
+          );
+          memoryCacheRef.current.set(key, scoped);
+          return scoped;
+        }
+        const inflight = inflightRef.current.get(key);
+        if (inflight) return inflight;
+      }
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+
+      const request = (async () => {
+        const timeoutController = new AbortController();
+        const onAbort = () => timeoutController.abort();
+        signal.addEventListener("abort", onAbort);
+        const timeoutId = window.setTimeout(
+          () => timeoutController.abort(),
+          INFORME_FETCH_TIMEOUT_MS,
+        );
+        try {
+          const params = new URLSearchParams({
+            year: String(year),
+            month: String(month),
+            range: rangeId,
+          });
+          if (options.force) params.set("force", "1");
+          if (tenantEmpresaParam) params.set("empresa", tenantEmpresaParam);
+          const response = await fetch(
+            `/api/informe-variacion?${params.toString()}`,
+            { cache: "no-store", signal: timeoutController.signal },
+          );
+          if (response.status === 401) {
+            router.replace("/login");
+            throw new Error("No autorizado.");
+          }
+          if (response.status === 403) {
+            router.replace("/secciones");
+            throw new Error("Sin permisos.");
+          }
+          const data = await readInformeApiResponse(response);
+          if (!response.ok) {
+            throw new Error(data.error ?? "No fue posible cargar el informe.");
+          }
+          const scoped = filterInformePayloadForLineScope(data, lineCategoryScope);
+          if (!scoped.rows?.length) {
+            throw new Error(
+              "Sin datos en el alcance permitido para este informe.",
+            );
+          }
+          memoryCacheRef.current.set(key, scoped);
+          writeSessionInformeIdle(sessionStoragePrefix, key, scoped);
+          prefetchWarmInformeRange(scoped, { metrics: ["v"] });
+          return scoped;
+        } finally {
+          window.clearTimeout(timeoutId);
+          signal.removeEventListener("abort", onAbort);
+        }
+      })();
+
+      inflightRef.current.set(key, request);
+      try {
+        return await request;
+      } finally {
+        if (inflightRef.current.get(key) === request) {
+          inflightRef.current.delete(key);
+        }
+      }
+    },
+    [lineCategoryScope, router, scopeCacheSuffix, sessionStoragePrefix, tenantEmpresaParam],
+  );
+
+  const loadCuts = useCallback(
+    async (
+      year: number,
+      month: number,
+      rangeId: InformeDayRangeId,
+      options: { force?: boolean } = {},
+    ) => {
+      const token = buildCutsCacheKey(year, month, rangeId, scopeCacheSuffix);
+      appliedKeyRef.current = token;
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setError(null);
+      const cached = options.force
+        ? null
+        : memoryCacheRef.current.get(token) ??
+          readSessionInforme(sessionStoragePrefix, token);
+      if (cached) {
+        const scoped = filterInformePayloadForLineScope(
+          cached,
+          lineCategoryScope,
+        );
+        setPayload(scoped);
+        setLoading(false);
+        prefetchWarmInformeRange(scoped, { metrics: ["v"] });
+        if (!options.force) return;
+      } else {
+        setLoading(true);
+      }
+      try {
+        const data = await fetchCuts(
+          year,
+          month,
+          rangeId,
+          controller.signal,
+          options,
+        );
+        if (appliedKeyRef.current !== token || controller.signal.aborted) {
+          return;
+        }
+        setPayload(data);
+        setLoading(false);
+      } catch (err) {
+        if (controller.signal.aborted || appliedKeyRef.current !== token) {
+          return;
+        }
+        if (!cached) setPayload(null);
+        setError(
+          err instanceof Error
+            ? err.name === "AbortError"
+              ? "La consulta tardo demasiado. Prueba un corte mas corto."
+              : err.message
+            : "Error desconocido cargando el informe.",
+        );
+      } finally {
+        if (!controller.signal.aborted && appliedKeyRef.current === token) {
+          setLoading(false);
+        }
+      }
+    },
+    [fetchCuts, lineCategoryScope, scopeCacheSuffix, sessionStoragePrefix],
+  );
+
   const loadSelection = useCallback(
     async (
       ranges: InformeSelectedRanges,
@@ -411,10 +615,32 @@ export default function InformeVariacionPage() {
   );
 
   useEffect(() => {
-    if (!ready || !canAccess || metaLoading || !applied) return;
-    void loadSelection(applied);
+    if (!ready || !canAccess || metaLoading) return;
+    if (boardTab === "comparativo") {
+      if (!applied) return;
+      void loadSelection(applied);
+      return () => abortRef.current?.abort();
+    }
+    if (boardTab === "ranking") {
+      if (!rankingApplied) return;
+      void loadSelection(rankingApplied);
+      return () => abortRef.current?.abort();
+    }
+    if (!parsedMonth || !effectiveDayRangeId) return;
+    void loadCuts(parsedMonth.year, parsedMonth.month, effectiveDayRangeId);
     return () => abortRef.current?.abort();
-  }, [applied, canAccess, loadSelection, metaLoading, ready]);
+  }, [
+    applied,
+    boardTab,
+    canAccess,
+    effectiveDayRangeId,
+    loadCuts,
+    loadSelection,
+    metaLoading,
+    parsedMonth,
+    rankingApplied,
+    ready,
+  ]);
 
   const applyDraft = (next: InformeSelectedRanges) => {
     setDraft(next);
@@ -433,7 +659,20 @@ export default function InformeVariacionPage() {
   const periodControlsDisabled = metaLoading || loading;
   const showInitialLoader = metaLoading || (loading && !payload && !error);
   const payloadMatchesSelection = Boolean(
-    payload && applied && payloadMatchesRanges(payload, applied),
+    payload &&
+      (boardTab === "reporte" || boardTab === "cortes"
+        ? parsedMonth &&
+          effectiveDayRangeId &&
+          payloadMatchesInformeSelection(
+            payload,
+            parsedMonth.year,
+            parsedMonth.month,
+            effectiveDayRangeId,
+            availableDayRanges,
+          )
+        : boardTab === "ranking"
+          ? rankingApplied && payloadMatchesRanges(payload, rankingApplied)
+          : applied && payloadMatchesRanges(payload, applied)),
   );
   const showBoard = Boolean(payload) && !metaLoading;
   const boardDataPending =
@@ -460,8 +699,8 @@ export default function InformeVariacionPage() {
               Informe de variacion
             </h1>
             <p className="text-sm text-slate-500">
-              Compara dos periodos de fechas. Empresa → Sede → Categoria →
-              Linea → Sublinea → Item
+              Compañía → Sede → Categoría → Línea → Sublínea → Ítem, con
+              empresa (proveedor). Cortes Excel, comparativo libre y ranking.
             </p>
           </div>
         </div>
@@ -496,8 +735,29 @@ export default function InformeVariacionPage() {
           ) : null}
           <button
             type="button"
-            onClick={() => applied && void loadSelection(applied, { force: true })}
-            disabled={periodControlsDisabled || !applied}
+            onClick={() => {
+              if (boardTab === "reporte" || boardTab === "cortes") {
+                if (!parsedMonth || !effectiveDayRangeId) return;
+                void loadCuts(
+                  parsedMonth.year,
+                  parsedMonth.month,
+                  effectiveDayRangeId,
+                  { force: true },
+                );
+                return;
+              }
+              const target =
+                boardTab === "ranking" ? rankingApplied : applied;
+              if (target) void loadSelection(target, { force: true });
+            }}
+            disabled={
+              periodControlsDisabled ||
+              (boardTab === "ranking"
+                ? !rankingApplied
+                : boardTab === "comparativo"
+                  ? !applied
+                  : !parsedMonth || !effectiveDayRangeId)
+            }
             className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
@@ -505,10 +765,158 @@ export default function InformeVariacionPage() {
           </button>
         </div>
 
+        <div
+          role="tablist"
+          aria-label="Pestañas del informe"
+          className="mb-4 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm"
+        >
+          {BOARD_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={boardTab === tab.id}
+              onClick={() => setBoardTab(tab.id)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-sm font-semibold transition",
+                boardTab === tab.id
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         <div className="mb-5 rounded-xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+          {boardTab === "reporte" || boardTab === "cortes" ? (
+            <>
+              <p className="mb-3 text-xs text-slate-500">
+                Mes + cortes Excel (1 al 7, 1 al 14, …, 1 al fin). Si el mes
+                sigue abierto, también sale el acumulado con datos, la
+                proyección 1 a hoy (aunque falten días) y la del siguiente
+                corte. Compara MoM y YoY.
+              </p>
+              <div className="mb-3 flex flex-wrap items-end gap-3">
+                <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                  Mes actual
+                  <input
+                    type="month"
+                    value={monthInput}
+                    disabled={metaLoading}
+                    onChange={(event) => setMonthInput(event.target.value)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:bg-slate-100"
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {availableDayRanges.map((range) => {
+                  const selected = effectiveDayRangeId === range.id;
+                  return (
+                    <button
+                      key={range.id}
+                      type="button"
+                      onClick={() => setDayRangeId(range.id)}
+                      title={
+                        range.projection
+                          ? `Proyección a día ${range.projection.targetToDay} con datos hasta el ${range.projection.actualToDay}`
+                          : range.label
+                      }
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-xs font-semibold",
+                        selected
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                      )}
+                    >
+                      {range.label}
+                    </button>
+                  );
+                })}
+                {availableDayRanges.length === 0 ? (
+                  <p className="text-sm text-slate-500">
+                    No hay cortes disponibles para este mes.
+                  </p>
+                ) : null}
+              </div>
+            </>
+          ) : boardTab === "ranking" ? (
+            <>
+              <p className="mb-3 text-xs text-slate-500">
+                Elige un periodo para el ranking. La variación usa el mismo
+                tramo del año anterior.
+              </p>
+              <div className="flex flex-wrap items-end gap-4">
+                <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                  Desde
+                  <input
+                    type="date"
+                    value={
+                      rankingDraft ? compactToIso(rankingDraft.currentFrom) : ""
+                    }
+                    min={minIso}
+                    max={maxIso}
+                    disabled={metaLoading}
+                    onChange={(event) => {
+                      const compact = isoToCompact(event.target.value);
+                      if (!compact || !rankingDraft) return;
+                      const aligned =
+                        alignPreviousYearRange(compact, rankingDraft.currentTo) ??
+                        rankingDraft;
+                      setRankingDraft({
+                        ...rankingDraft,
+                        currentFrom: compact,
+                        previousFrom: aligned.previousFrom,
+                        previousTo: aligned.previousTo,
+                      });
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:bg-slate-100"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+                  Hasta
+                  <input
+                    type="date"
+                    value={
+                      rankingDraft ? compactToIso(rankingDraft.currentTo) : ""
+                    }
+                    min={minIso}
+                    max={maxIso}
+                    disabled={metaLoading}
+                    onChange={(event) => {
+                      const compact = isoToCompact(event.target.value);
+                      if (!compact || !rankingDraft) return;
+                      const aligned =
+                        alignPreviousYearRange(
+                          rankingDraft.currentFrom,
+                          compact,
+                        ) ?? rankingDraft;
+                      setRankingDraft({
+                        ...rankingDraft,
+                        currentTo: compact,
+                        previousFrom: aligned.previousFrom,
+                        previousTo: aligned.previousTo,
+                      });
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:bg-slate-100"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={!rankingDraft || metaLoading}
+                  onClick={() => rankingDraft && setRankingApplied(rankingDraft)}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Aplicar periodo
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
           <p className="mb-3 text-xs text-slate-500">
-            Elige inicio y fin en cada periodo. Al comparar, las cifras salen
-            de una: meses cerrados ya van preagregados.
+            Elige dos intervalos de fechas. Al comparar, las cifras salen de
+            una: meses cerrados ya van preagregados.
           </p>
           <div className="flex flex-wrap items-end gap-4">
             <fieldset className="flex flex-wrap items-end gap-2">
@@ -616,6 +1024,8 @@ export default function InformeVariacionPage() {
               Comparar
             </button>
           </div>
+            </>
+          )}
         </div>
 
         {error ? (
@@ -633,8 +1043,9 @@ export default function InformeVariacionPage() {
           </div>
         ) : showBoard ? (
           <InformeVariacionBoard
-            key={`${applied?.currentFrom ?? ""}-${applied?.previousFrom ?? ""}${scopeCacheSuffix}`}
+            key={`${boardTab}:${payload?.periods.current.from ?? ""}:${payload?.periods.mom.from ?? ""}:${payload?.meta.dayRange?.id ?? ""}:${scopeCacheSuffix}`}
             payload={payload!}
+            boardTab={boardTab}
             dataPending={boardDataPending}
             categoryScopeLocked={Boolean(
               lineCategoryScope.forcedMargenTipos?.length,

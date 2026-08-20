@@ -43,12 +43,13 @@ import type {
 
 type Prepared = ReturnType<typeof prepareInformeData>;
 
-type InformeBoardTab = "resumen" | "ranking" | "matriz";
+export type InformeBoardTab = "reporte" | "cortes" | "comparativo" | "ranking";
 
-const BOARD_TABS: Array<{ id: InformeBoardTab; label: string }> = [
-  { id: "resumen", label: "Empresa y sede" },
+export const BOARD_TABS: Array<{ id: InformeBoardTab; label: string }> = [
+  { id: "reporte", label: "Reporte" },
+  { id: "cortes", label: "Cortes" },
+  { id: "comparativo", label: "Comparativo" },
   { id: "ranking", label: "Ranking" },
-  { id: "matriz", label: "Matriz" },
 ];
 
 type Props = {
@@ -56,6 +57,8 @@ type Props = {
   dataPending?: boolean;
   categoryScopeLocked?: boolean;
   lineScopeLocked?: boolean;
+  boardTab: InformeBoardTab;
+  compareMode?: "yoy" | "mom";
 };
 
 const EMP_DOT_CLASS: Record<string, string> = {
@@ -75,6 +78,8 @@ function InformeVariacionBoardReady({
   dataPending = false,
   categoryScopeLocked = false,
   lineScopeLocked = false,
+  boardTab,
+  compareMode: compareModeProp,
 }: Props & { prepared: Prepared }) {
   const [kpiMetric, setKpiMetric] = useState<InformeMetric>("v");
   const [sedeMetric, setSedeMetric] = useState<InformeMetric>("v");
@@ -83,16 +88,22 @@ function InformeVariacionBoardReady({
   const [rankingDimension, setRankingDimension] =
     useState<InformeRankingDimension>("item");
   const [rankingSort, setRankingSort] = useState<InformeRankingSort>("cur");
-  const rankingMode = "mom" as const;
+  const [rankingLimit, setRankingLimit] = useState(20);
+  const dualCompare =
+    payload.periods.yoy.from !== payload.periods.mom.from ||
+    payload.periods.yoy.to !== payload.periods.mom.to;
+  const [compareMode, setCompareMode] = useState<"yoy" | "mom">(
+    compareModeProp ?? "mom",
+  );
+  const rankingMode = compareMode;
   const [filters, setFilters] = useState<InformeGlobalFilters>(EMPTY_INFORME_FILTERS);
   const deferredFilters = useDeferredValue(filters);
-  const matrixMode = "mom" as const;
+  const matrixMode = compareMode;
   const [matrixDisplay, setMatrixDisplay] = useState<"pct" | "value">("pct");
   const [matrixDepth, setMatrixDepth] = useState<"cat" | "lin">("cat");
   const [matrixOpen, setMatrixOpen] = useState<Set<string>>(() => new Set());
   const [sedeSort, setSedeSort] = useState({ col: "name", dir: 1 });
   const [matrixSort, setMatrixSort] = useState({ col: -1, dir: 1 });
-  const [boardTab, setBoardTab] = useState<InformeBoardTab>("resumen");
 
   const filtersPending =
     deferredFilters !== filters && hasActiveInformeFilters(filters);
@@ -170,7 +181,7 @@ function InformeVariacionBoardReady({
   const periodoActual = payload.periods.current;
 
   const curLabel = "Actual";
-  const momLabel = "Anterior";
+  const momLabel = compareMode === "yoy" ? "Año ant." : "Mes ant.";
   const yoyLabel = momLabel;
 
   const matrixSortKeys = (
@@ -407,31 +418,23 @@ function InformeVariacionBoardReady({
           aria-hidden
         />
       ) : null}
-      <div
-        role="tablist"
-        aria-label="Tablas del informe"
-        className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm"
-      >
-        {BOARD_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={boardTab === tab.id}
-            onClick={() => setBoardTab(tab.id)}
-            className={cn(
-              "rounded-lg px-3 py-1.5 text-sm font-semibold transition",
-              boardTab === tab.id
-                ? "bg-slate-900 text-white shadow-sm"
-                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {dualCompare ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Comparar contra
+          </span>
+          <ToggleGroup
+            value={compareMode}
+            options={[
+              { id: "mom", label: "MoM" },
+              { id: "yoy", label: "YoY" },
+            ]}
+            onChange={(value) => setCompareMode(value as "yoy" | "mom")}
+          />
+        </div>
+      ) : null}
 
-      {boardTab === "resumen" ? (
+      {boardTab === "reporte" || boardTab === "comparativo" ? (
         <>
       <Section
         title="Resumen por empresa y sede"
@@ -489,14 +492,16 @@ function InformeVariacionBoardReady({
           onDimensionChange={setRankingDimension}
           sort={rankingSort}
           onSortChange={setRankingSort}
+          limit={rankingLimit}
+          onLimitChange={setRankingLimit}
           mode={rankingMode}
-          onModeChange={() => undefined}
+          onModeChange={setCompareMode}
           pass={pass}
         />
       </Section>
       ) : null}
 
-      {boardTab === "matriz" ? (
+      {boardTab === "cortes" ? (
       <Section
         title="Matriz comparativa entre sedes"
         actions={
@@ -895,7 +900,7 @@ function InformeFilters({
       </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <DiMultiSelect
-          label="Empresas"
+          label="Compañía"
           values={filters.emp}
           options={empOptions}
           emptyLabel="Todas"
@@ -950,7 +955,7 @@ function InformeFilters({
         />
         {payload.provs && payload.provs.length > 0 ? (
           <DiMultiSelect
-            label="Proveedores"
+            label="Empresa (proveedor)"
             values={filters.prov}
             options={provOptions}
             emptyLabel="Todos"

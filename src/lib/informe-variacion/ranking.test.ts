@@ -77,6 +77,19 @@ describe("buildInformeRankingRows", () => {
     assert.equal(rows[1]?.label, "(Sin proveedor)");
     assert.equal(rows[1]?.total[0], 40);
   });
+
+  it("agrupa por compañia", () => {
+    const payload = prepareInformeData(samplePayload());
+    const rows = buildInformeRankingRows({
+      payload,
+      metric: "v",
+      pass: () => true,
+      dimension: "emp",
+    });
+    assert.equal(rows[0]?.label, "Comercializadora");
+    assert.equal(rows[0]?.total[0], 240);
+    assert.equal(rows[1]?.label, "Mercamio");
+  });
 });
 
 describe("buildInformeEmpresaSummary", () => {

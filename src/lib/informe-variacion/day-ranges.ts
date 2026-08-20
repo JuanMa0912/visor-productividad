@@ -31,16 +31,22 @@ export type InformeDayRangeId =
   | `proj-${InformeClosedDayRangeId}`
   | InformeSingleDayRangeId
   /** Acumulado preciso 1→N (sin proyectar al siguiente corte Excel). */
-  | `mtd-${string}`;
+  | `mtd-${string}`
+  /** Proyección 1→hoy calendario, aunque falten días con datos. */
+  | `proj-hoy-${string}`;
 
 export const SINGLE_DAY_RANGE_PREFIX = "d-";
 export const MTD_RANGE_PREFIX = "mtd-";
+export const HOY_PROJ_PREFIX = "proj-hoy-";
 
 export const isSingleDayInformeRangeId = (rangeId: string): boolean =>
   /^d-\d{1,2}$/.test(rangeId.trim());
 
 export const isMtdInformeRangeId = (rangeId: string): boolean =>
   /^mtd-\d{1,2}$/.test(rangeId.trim());
+
+export const isHoyProjectedInformeRangeId = (rangeId: string): boolean =>
+  /^proj-hoy-\d{1,2}$/.test(rangeId.trim());
 
 export const buildSingleDayInformeRangeId = (
   day: number,
@@ -70,6 +76,21 @@ export const parseMtdInformeRangeId = (
   return day;
 };
 
+/** Dia N de un id `proj-hoy-NN`, o null si no aplica. */
+export const parseHoyProjectedInformeRangeId = (
+  rangeId: string | null | undefined,
+): number | null => {
+  if (!rangeId || !isHoyProjectedInformeRangeId(rangeId)) return null;
+  const day = Number(rangeId.trim().slice(HOY_PROJ_PREFIX.length));
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+  return day;
+};
+
+export const buildHoyProjectedInformeRangeId = (
+  day: number,
+): `proj-hoy-${string}` =>
+  `${HOY_PROJ_PREFIX}${String(day).padStart(2, "0")}`;
+
 /** Acepta YYYYMMDD o YYYY-MM-DD (fecha_dcto::text en PostgreSQL). */
 export const normalizeInformeCompactDate = (
   raw: string | null | undefined,
@@ -86,7 +107,7 @@ export type InformeDayRangeProjection = {
   actualToDay: number;
   targetToDay: number;
   factor: number;
-  baseId: InformeClosedDayRangeId;
+  baseId?: InformeClosedDayRangeId | `hoy-${string}`;
 };
 
 export type InformeDayRangeSpec = {
@@ -136,6 +157,29 @@ export const resolveInformeReferenceDay = (
   return ref;
 };
 
+/**
+ * Dia de calendario del mes (hoy si es el mes en curso), sin recortar por
+ * maxDate de BD. Sirve para proyectar 1→hoy aunque aún no haya venta esos días.
+ */
+export const resolveInformeCalendarDay = (
+  year: number,
+  month: number,
+  asOf: Date = new Date(),
+): number => {
+  const monthLast = lastDayOfMonth(year, month);
+  const todayYear = asOf.getFullYear();
+  const todayMonth = asOf.getMonth() + 1;
+  const todayDay = asOf.getDate();
+
+  if (year > todayYear || (year === todayYear && month > todayMonth)) {
+    return 0;
+  }
+  if (year < todayYear || (year === todayYear && month < todayMonth)) {
+    return monthLast;
+  }
+  return Math.min(todayDay, monthLast);
+};
+
 export const isProjectedInformeRangeId = (rangeId: string): boolean =>
   rangeId.startsWith("proj-");
 
@@ -170,8 +214,40 @@ export const buildPreciseMtdInformeDayRange = (
 };
 
 /**
+ * 1→hoy del calendario, proyectando los días con datos. Si hoy es 20 y el
+ * roll llega al 14, escala 1→14 hacia 1→20. MoM/YoY comparan 1→20.
+ */
+export const buildHoyProjectedInformeDayRange = (
+  year: number,
+  month: number,
+  asOf: Date = new Date(),
+  maxCompactDate?: string | null,
+): InformeDayRangeSpec | null => {
+  const calendarDay = resolveInformeCalendarDay(year, month, asOf);
+  const dataDay = resolveInformeReferenceDay(year, month, asOf, maxCompactDate);
+  if (calendarDay < 2 || dataDay < 1) return null;
+  if (calendarDay <= dataDay) return null;
+
+  const factor = calendarDay / dataDay;
+  if (!Number.isFinite(factor) || factor <= 1) return null;
+
+  return {
+    id: buildHoyProjectedInformeRangeId(calendarDay),
+    label: `1 al ${calendarDay} (proyección)`,
+    fromDay: 1,
+    toDay: calendarDay,
+    projection: {
+      actualToDay: dataDay,
+      targetToDay: calendarDay,
+      factor,
+      baseId: `hoy-${String(calendarDay).padStart(2, "0")}`,
+    },
+  };
+};
+
+/**
  * @deprecated Preferir `buildPreciseMtdInformeDayRange`. Se mantiene por compat
- * con ids `proj-*` ya cacheados; la UI ya no ofrece proyección.
+ * con ids `proj-*` ya cacheados; la UI de cortes vuelve a ofrecer proyección.
  */
 export const buildNextProjectedInformeDayRange = (
   year: number,
@@ -245,6 +321,42 @@ export const getAvailableInformeDayRanges = (
   );
   if (!mtd) return closed;
   return [...closed, mtd];
+};
+
+/** Cortes de la pestaña 2: Excel cerrado + MTD + proyección 1→hoy + siguiente corte. */
+export const getInformeCortesDayRanges = (
+  year: number,
+  month: number,
+  asOf: Date = new Date(),
+  maxCompactDate?: string | null,
+): InformeDayRangeSpec[] => {
+  const ranges = getAvailableInformeDayRanges(year, month, asOf, maxCompactDate);
+  const hoy = buildHoyProjectedInformeDayRange(
+    year,
+    month,
+    asOf,
+    maxCompactDate,
+  );
+  const nextExcel = buildNextProjectedInformeDayRange(
+    year,
+    month,
+    asOf,
+    maxCompactDate,
+  );
+  const extra: InformeDayRangeSpec[] = [];
+  if (hoy) extra.push(hoy);
+  if (
+    nextExcel &&
+    nextExcel.projection?.targetToDay !== hoy?.projection?.targetToDay
+  ) {
+    extra.push(nextExcel);
+  }
+  return [
+    ...ranges,
+    ...extra.filter(
+      (range) => !ranges.some((existing) => existing.id === range.id),
+    ),
+  ];
 };
 
 export const defaultInformeDayRangeId = (
@@ -332,6 +444,15 @@ export const parseInformeDayRangeId = (
       toDay: mtdDay,
     };
   }
+  const hoyDay = parseHoyProjectedInformeRangeId(raw);
+  if (hoyDay !== null) {
+    return {
+      id: raw as InformeDayRangeId,
+      label: `1 al ${hoyDay} (proyección)`,
+      fromDay: 1,
+      toDay: hoyDay,
+    };
+  }
   if (raw.startsWith("proj-")) {
     const baseId = raw.slice(5) as InformeClosedDayRangeId;
     const found = DAY_RANGE_BY_ID.get(baseId);
@@ -354,7 +475,7 @@ export const isInformeDayRangeAvailable = (
   asOf: Date = new Date(),
   maxCompactDate?: string | null,
 ): boolean =>
-  getAvailableInformeDayRanges(year, month, asOf, maxCompactDate).some(
+  getInformeCortesDayRanges(year, month, asOf, maxCompactDate).some(
     (range) => range.id === rangeId,
   );
 
@@ -399,6 +520,12 @@ export const payloadMatchesInformeSelection = (
   if (mtdDay !== null) {
     const expectedFrom = compactDate(year, month, 1);
     const expectedTo = compactDate(year, month, mtdDay);
+    return from === expectedFrom && to === expectedTo;
+  }
+  const hoyDay = parseHoyProjectedInformeRangeId(dayRangeId);
+  if (hoyDay !== null) {
+    const expectedFrom = compactDate(year, month, 1);
+    const expectedTo = compactDate(year, month, hoyDay);
     return from === expectedFrom && to === expectedTo;
   }
 

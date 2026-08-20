@@ -238,6 +238,24 @@ export const defaultInformeYtdRanges = (
   };
 };
 
+/** Un mes (1 → último día con datos) vs el mismo tramo del año anterior. */
+export const defaultInformeMonthToDateRanges = (
+  maxCompact: string | null | undefined,
+  asOf: Date = new Date(),
+): InformeSelectedRanges => {
+  const ytd = defaultInformeYtdRanges(maxCompact, asOf);
+  const toParts = parseCompactDateParts(ytd.currentTo);
+  if (!toParts) return ytd;
+  const currentFrom = toCompactDate(toParts.year, toParts.month, 1);
+  const aligned = alignPreviousYearRange(currentFrom, ytd.currentTo);
+  return {
+    currentFrom,
+    currentTo: ytd.currentTo,
+    previousFrom: aligned?.previousFrom ?? ytd.previousFrom,
+    previousTo: aligned?.previousTo ?? ytd.previousTo,
+  };
+};
+
 export const alignPreviousYearRange = (
   currentFrom: string,
   currentTo: string,

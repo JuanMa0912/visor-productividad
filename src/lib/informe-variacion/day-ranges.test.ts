@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   defaultInformeDayRangeId,
   getAvailableInformeDayRanges,
+  getInformeCortesDayRanges,
   buildInformeSingleDayRange,
   buildPreciseMtdInformeDayRange,
   parseInformeDayRangeId,
@@ -63,6 +64,38 @@ describe("getAvailableInformeDayRanges", () => {
     assert.equal(defaultInformeDayRangeId(available), "mtd-05");
   });
 
+  it("cortes de pestaña 2 agregan proyeccion al siguiente corte Excel", () => {
+    const asOf = new Date(2026, 6, 15);
+    const cortes = getInformeCortesDayRanges(2026, 7, asOf);
+    assert.deepEqual(
+      cortes.map((range) => range.id),
+      ["1-7", "1-14", "8-14", "mtd-15", "proj-1-21"],
+    );
+    assert.equal(cortes.at(-1)?.label, "1 al 21 (proyección)");
+  });
+
+  it("si hoy va más adelante que los datos, proyecta 1 a hoy", () => {
+    const asOf = new Date(2026, 6, 20);
+    const cortes = getInformeCortesDayRanges(2026, 7, asOf, "20260714");
+    assert.deepEqual(
+      cortes.map((range) => range.id),
+      ["1-7", "1-14", "8-14", "proj-hoy-20", "proj-1-21"],
+    );
+    const hoy = cortes.find((range) => range.id === "proj-hoy-20");
+    assert.equal(hoy?.label, "1 al 20 (proyección)");
+    assert.equal(hoy?.projection?.actualToDay, 14);
+    assert.equal(hoy?.projection?.targetToDay, 20);
+    assert.equal(hoy?.projection?.factor, 20 / 14);
+  });
+
+  it("no duplica proyección 1 a hoy cuando hoy cae en el siguiente corte Excel", () => {
+    const asOf = new Date(2026, 6, 21);
+    const cortes = getInformeCortesDayRanges(2026, 7, asOf, "20260714");
+    const ids = cortes.map((range) => range.id);
+    assert.ok(ids.includes("proj-hoy-21"));
+    assert.equal(ids.includes("proj-1-21"), false);
+  });
+
   it("normaliza maxDate ISO desde PostgreSQL", () => {
     const asOf = new Date(2026, 6, 10);
     const available = getAvailableInformeDayRanges(2026, 7, asOf, "2026-07-09");
@@ -76,6 +109,8 @@ describe("getAvailableInformeDayRanges", () => {
     assert.ok(parseInformeDayRangeId("mtd-15"));
     assert.equal(parseInformeDayRangeId("mtd-15")?.toDay, 15);
     assert.ok(parseInformeDayRangeId("proj-1-7")); // legacy
+    assert.equal(parseInformeDayRangeId("proj-hoy-20")?.toDay, 20);
+    assert.equal(parseInformeDayRangeId("proj-hoy-20")?.label, "1 al 20 (proyección)");
   });
 
   it("includeProjection false omite el acumulado abierto (solo cerrados)", () => {
@@ -133,6 +168,22 @@ describe("computeInformePeriods con rango parcial", () => {
     assert.equal(periods.mom.to, "20260514");
     assert.equal(periods.yoy.from, "20250601");
     assert.equal(periods.yoy.to, "20250614");
+  });
+});
+
+describe("computeInformePeriods con proyección 1 a hoy", () => {
+  it("SQL usa días con datos; MoM/YoY comparan 1→hoy calendario", () => {
+    const asOf = new Date(2026, 6, 20);
+    const cortes = getInformeCortesDayRanges(2026, 7, asOf, "20260714");
+    const hoy = cortes.find((range) => range.id === "proj-hoy-20");
+    assert.ok(hoy);
+    const periods = computeInformePeriods(2026, 7, hoy);
+    assert.equal(periods.current.from, "20260701");
+    assert.equal(periods.current.to, "20260714");
+    assert.equal(periods.mom.from, "20260601");
+    assert.equal(periods.mom.to, "20260620");
+    assert.equal(periods.yoy.from, "20250701");
+    assert.equal(periods.yoy.to, "20250720");
   });
 });
 
@@ -194,6 +245,20 @@ describe("payloadMatchesInformeSelection", () => {
     );
     assert.equal(
       payloadMatchesInformeSelection(payload, 2026, 8, "mtd-12", []),
+      false,
+    );
+  });
+
+  it("valida proj-hoy-NN contra 1→hoy calendario", () => {
+    const payload = {
+      periods: { current: { from: "20260701", to: "20260720" } },
+    };
+    assert.equal(
+      payloadMatchesInformeSelection(payload, 2026, 7, "proj-hoy-20", []),
+      true,
+    );
+    assert.equal(
+      payloadMatchesInformeSelection(payload, 2026, 7, "proj-hoy-21", []),
       false,
     );
   });

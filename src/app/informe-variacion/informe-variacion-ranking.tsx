@@ -13,6 +13,7 @@ import {
 } from "@/lib/informe-variacion/format";
 import {
   INFORME_RANKING_DIMENSIONS,
+  INFORME_RANKING_LIMITS,
   buildInformeEmpresaSummary,
   buildInformeRankingRows,
   type InformeRankingDimension,
@@ -32,6 +33,8 @@ type RankingProps = {
   onDimensionChange: (dimension: InformeRankingDimension) => void;
   sort: InformeRankingSort;
   onSortChange: (sort: InformeRankingSort) => void;
+  limit: number;
+  onLimitChange: (limit: number) => void;
   mode: "yoy" | "mom";
   onModeChange: (mode: "yoy" | "mom") => void;
   pass: (row: Prepared["rows"][number]) => boolean;
@@ -46,7 +49,7 @@ const MiniToggle = ({
   options: Array<{ id: string; label: string }>;
   onChange: (value: string) => void;
 }) => (
-  <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+  <span className="inline-flex flex-wrap overflow-hidden rounded-lg border border-slate-200">
     {options.map((option) => (
       <button
         key={option.id}
@@ -71,6 +74,8 @@ export function InformeRankingTable({
   onDimensionChange,
   sort,
   onSortChange,
+  limit,
+  onLimitChange,
   mode: _mode,
   onModeChange: _onModeChange,
   pass,
@@ -85,9 +90,9 @@ export function InformeRankingTable({
         pass,
         dimension,
         sort,
-        limit: 20,
+        limit,
       }),
-    [dimension, metric, pass, payload, sort],
+    [dimension, limit, metric, pass, payload, sort],
   );
 
   return (
@@ -117,12 +122,20 @@ export function InformeRankingTable({
           ]}
           onChange={(value) => onSortChange(value as InformeRankingSort)}
         />
+        <MiniToggle
+          value={String(limit)}
+          options={INFORME_RANKING_LIMITS.map((item) => ({
+            id: String(item),
+            label: `Top ${item}`,
+          }))}
+          onChange={(value) => onLimitChange(Number(value))}
+        />
       </div>
       <p className="text-xs text-slate-500">
-        Top 20 por {INFORME_RANKING_DIMENSIONS.find((item) => item.id === dimension)?.label.toLowerCase()}{" "}
-        × sede. Categoría es la categoría comercial del ítem. Proveedor sale del
-        maestro de ficha (proveedor_item). Los filtros de categoría y proveedor de
-        arriba aplican a este ranking y al resto de secciones.
+        Top {limit} por{" "}
+        {INFORME_RANKING_DIMENSIONS.find((item) => item.id === dimension)?.label.toLowerCase()}{" "}
+        × sede. Categoría es el tipo comercial. Empresa (proveedor) sale del
+        maestro. Los filtros de estructura de arriba aplican a este ranking.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] border-collapse text-sm">

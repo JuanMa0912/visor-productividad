@@ -2,12 +2,20 @@ import { NextResponse } from "next/server";
 import { getSessionCookieOptions, requireAuthSession } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { resolveMargenSedeScope } from "@/lib/margenes/margen-sede-scope";
-import { loadInformeVariacionRangePayload } from "@/lib/informe-variacion/query";
+import {
+  loadInformeVariacionPayload,
+  loadInformeVariacionRangePayload,
+} from "@/lib/informe-variacion/query";
 import { loadInformeVariacionMeta } from "@/lib/informe-variacion/meta";
 import {
+  defaultInformeDayRangeId,
+  getInformeCortesDayRanges,
   normalizeInformeCompactDate,
+  parseInformeDayRangeId,
+  type InformeDayRangeId,
 } from "@/lib/informe-variacion/day-ranges";
 import {
+  buildInformeCacheKey,
   buildInformeRangeCacheKey,
   getCachedInformePayload,
   invalidateInformeCacheKey,
@@ -33,6 +41,11 @@ import {
   validateInformeSelectedRanges,
   type InformeSelectedRanges,
 } from "@/lib/informe-variacion/date-range";
+import {
+  isDefaultInformeCompareMonth,
+  isInformeCompareMonthError,
+  parseInformeCompareMonthParam,
+} from "@/lib/informe-variacion/periods";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -161,6 +174,198 @@ export async function GET(request: Request) {
         { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
       ),
     );
+  }
+
+  const yearRaw = url.searchParams.get("year");
+  const monthRaw = url.searchParams.get("month");
+  const cutsMode =
+    Boolean(yearRaw?.trim() && monthRaw?.trim()) &&
+    url.searchParams.get("from") == null;
+
+  if (cutsMode) {
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    if (
+      !Number.isInteger(year) ||
+      year < 2000 ||
+      year > 2100 ||
+      !Number.isInteger(month) ||
+      month < 1 ||
+      month > 12
+    ) {
+      return withSession(
+        NextResponse.json(
+          { error: "Parametros year y month invalidos." },
+          { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
+
+    const compareOrError = parseInformeCompareMonthParam(
+      year,
+      month,
+      url.searchParams.get("compareYear"),
+      url.searchParams.get("compareMonth"),
+    );
+    if (isInformeCompareMonthError(compareOrError)) {
+      return withSession(
+        NextResponse.json(
+          { error: compareOrError.error },
+          { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
+    const compare = compareOrError;
+    const customCompare = !isDefaultInformeCompareMonth(year, month, compare);
+    const asOf = new Date();
+    const availableRanges = getInformeCortesDayRanges(
+      year,
+      month,
+      asOf,
+      maxCompactDate,
+    );
+    if (availableRanges.length === 0) {
+      return withSession(
+        NextResponse.json(
+          { error: "No hay cortes de dias disponibles para el mes seleccionado." },
+          { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
+
+    const requestedRange = url.searchParams.get("range")?.trim() ?? "";
+    const rangeId = (
+      requestedRange
+        ? parseInformeDayRangeId(requestedRange)?.id
+        : defaultInformeDayRangeId(availableRanges)
+    ) as InformeDayRangeId | null;
+    const dayRange =
+      rangeId == null
+        ? null
+        : availableRanges.find((range) => range.id === rangeId) ??
+          parseInformeDayRangeId(rangeId);
+    if (!rangeId || !dayRange || !availableRanges.some((range) => range.id === rangeId)) {
+      return withSession(
+        NextResponse.json(
+          { error: "Rango de dias invalido para el mes seleccionado." },
+          { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
+
+    const forceRefresh = url.searchParams.get("force") === "1";
+    const cacheKey = `${buildInformeCacheKey(
+      year,
+      month,
+      allowedSedeKeys,
+      rangeId,
+      lineScope.forcedMargenTipos,
+      lineScope.forcedMargenLineas,
+      lineScope.excludedMargenTipos,
+      compare,
+    )}:ds=${dataKind}`;
+    if (forceRefresh) {
+      invalidateInformeCacheKey(cacheKey);
+    } else {
+      const cached = getCachedInformePayload(cacheKey);
+      if (cached) {
+        return withSession(
+          NextResponse.json(cached, {
+            headers: {
+              "Cache-Control": CACHE_CONTROL,
+              "X-Data-Source": "cache",
+            },
+          }),
+        );
+      }
+    }
+
+    const useStd =
+      dataKind === "default" &&
+      !forceRefresh &&
+      !customCompare &&
+      !rangeId.startsWith("proj-");
+    if (useStd) {
+      const stdClient = await (await getDbPool()).connect();
+      try {
+        const snapped = await getInformePayloadStd(stdClient, year, month, rangeId);
+        if (snapped) {
+          const cleaned = adaptInformePayloadStdForRequest(
+            snapped,
+            allowedSedeKeys,
+            lineScope,
+          );
+          const withProv = await ensureInformeProveedores(stdClient, cleaned);
+          setCachedInformePayload(cacheKey, withProv);
+          return withSession(
+            NextResponse.json(withProv, {
+              headers: {
+                "Cache-Control": CACHE_CONTROL,
+                "X-Data-Source": "payload-std",
+              },
+            }),
+          );
+        }
+      } finally {
+        stdClient.release();
+      }
+    }
+
+    const client = await (await getDbPool()).connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL work_mem = '256MB'");
+      await client.query("SET LOCAL statement_timeout = '90s'");
+      await client.query("SET LOCAL jit = off");
+      const startedAt = Date.now();
+      const payload = await loadInformeVariacionPayload(
+        client,
+        year,
+        month,
+        allowedSedeKeys,
+        {
+          dayRange,
+          forcedMargenTipos: lineScope.forcedMargenTipos,
+          forcedMargenLineas: lineScope.forcedMargenLineas,
+          excludedMargenTipos: lineScope.excludedMargenTipos,
+          kind: dataKind,
+          compare,
+        },
+      );
+      const elapsedMs = Date.now() - startedAt;
+      await client.query("COMMIT");
+      setCachedInformePayload(cacheKey, payload);
+      return withSession(
+        NextResponse.json(payload, {
+          headers: {
+            "Cache-Control": CACHE_CONTROL,
+            "X-Data-Source": "database",
+            "X-Informe-Elapsed-Ms": String(elapsedMs),
+            "X-Informe-Row-Count": String(payload.meta.rowCount),
+          },
+        }),
+      );
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        /* ignore */
+      }
+      console.error("Error en /api/informe-variacion (cortes):", error);
+      return withSession(
+        NextResponse.json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : "No fue posible generar el informe de variacion.",
+          },
+          { status: 500, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    } finally {
+      client.release();
+    }
   }
 
   const defaults = defaultInformeYtdRanges(maxCompactDate);
