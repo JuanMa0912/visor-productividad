@@ -572,6 +572,19 @@ export default function CostosPage() {
     cell: PreciosProveedorMatrix["cells"][number] | undefined,
   ) => {
     if (!cell) return "—";
+    // Sin kilos en el rango pedido no hubo entrada de ESE proveedor en ESAS
+    // fechas. Se dice explicitamente en vez de dejar la celda muda: antes se
+    // rellenaba con kilos de otro periodo, que es justo lo que se corrigio.
+    if (!(cell.units > 0)) {
+      return (
+        <span
+          className="text-[10px] font-medium text-slate-400"
+          title="Este proveedor no registra entradas de este ítem en el rango de fechas seleccionado"
+        >
+          sin entrada
+        </span>
+      );
+    }
     return (
       <div className="leading-tight">
         <div>{unitMoney(cell.pcu)}/kg</div>
@@ -579,7 +592,7 @@ export default function CostosPage() {
           {unitsFmt(cell.units)} kg
         </div>
         <div className="text-[10px] font-medium opacity-90">
-          {pctFmt(cell.margenPct)}
+          {pctFmt(cell.margenPct)} vendido
         </div>
       </div>
     );
@@ -587,8 +600,10 @@ export default function CostosPage() {
 
   const cellHeatStyle = (
     cell: PreciosProveedorMatrix["cells"][number] | undefined,
+    isExpandRow = false,
   ) => {
     if (!cell) return heatStyleLowGreen(-1);
+    if (isExpandRow && !(cell.units > 0)) return heatStyleLowGreen(-1);
     const raw =
       metric === "pvu"
         ? cell.pvu
@@ -996,12 +1011,15 @@ Venta ${money(cell.sales)} · Costo entrada tot. ${money(cell.cost)}`
                                   </th>
                                   {matrix.columns.map((col) => {
                                     const cell = childBySede.get(col.key);
-                                    const style = cellHeatStyle(cell);
-                                    const title = cell
-                                      ? `${child.proveedorLabel} · ${col.label}
-Costo entrada ${unitMoney(cell.pcu)} · Precio venta ${unitMoney(cell.pvu)}
-Margen ${pctFmt(cell.margenPct)} · ${unitsFmt(cell.units)} und`
-                                      : "";
+                                    const style = cellHeatStyle(cell, true);
+                                    const title = !cell
+                                      ? ""
+                                      : cell.units > 0
+                                        ? `${child.proveedorLabel} · ${col.label}
+Costo entrada ${unitMoney(cell.pcu)}/kg · Precio venta ${unitMoney(cell.pvu)}/kg
+Margen al que saldría vendido ${pctFmt(cell.margenPct)} · ${unitsFmt(cell.units)} kg comprados en el rango`
+                                        : `${child.proveedorLabel} · ${col.label}
+Sin entradas de este ítem en el rango de fechas seleccionado`;
                                     return (
                                       <td key={col.key} className="p-1">
                                         <div
