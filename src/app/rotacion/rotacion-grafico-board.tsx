@@ -38,8 +38,6 @@ import {
   type RotacionChartSlicePresetId,
 } from "@/lib/rotacion/chart-series";
 
-const EMPTY_KEYS: string[] = [];
-
 const GROUP_OPTIONS: Array<{ id: RotacionChartGroupBy; label: string }> = [
   { id: "sede", label: "Sedes" },
   { id: "linea", label: "Lineas" },
@@ -264,15 +262,22 @@ export function RotacionGraficoBoard({
   const totals = useMemo(() => sumRotacionChartStacks(stacks), [stacks]);
   const nextGroup = nextChartGroupBy(groupBy);
 
-  const gestionSedeScopes = useMemo(() => {
-    const keys = new Set<string>();
-    for (const row of rows) {
-      keys.add(`${row.empresa}::${row.sedeId}`);
-    }
-    const all = [...keys];
-    if (selectedSedeKeys.length === 0) return all;
-    return all.filter((key) => selectedSedeKeys.includes(key));
-  }, [rows, selectedSedeKeys]);
+  const gestionSedeOptions = useMemo(
+    () =>
+      buildRotacionChartGroupOptions(
+        filterTaggedRowsForChart(tagged, families, []),
+        "sede",
+      ),
+    [families, tagged],
+  );
+
+  const gestionTagged = useMemo(
+    () =>
+      filterTaggedRowsForChart(tagged, families, [], {
+        buckets: sliceBuckets,
+      }),
+    [families, sliceBuckets, tagged],
+  );
 
   const resetDefault = () => {
     setGroupBy("sede");
@@ -610,13 +615,11 @@ export function RotacionGraficoBoard({
       </CardContent>
     </Card>
     <RotacionGestionPanel
-      tagged={scoped}
+      tagged={gestionTagged}
       dateRange={dateRange}
       families={families}
       buckets={sliceBuckets}
-      sedeScopes={gestionSedeScopes}
-      lineaKeys={showLineaFilter ? selectedLineaKeys : EMPTY_KEYS}
-      sublineaKeys={showSublineaFilter ? selectedSublineaKeys : EMPTY_KEYS}
+      sedeOptions={gestionSedeOptions}
       loading={loading}
     />
     </div>

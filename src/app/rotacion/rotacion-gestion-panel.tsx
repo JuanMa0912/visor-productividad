@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { LineChart } from "@mui/x-charts/LineChart";
+import { BarChart } from "@mui/x-charts/BarChart";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DiMultiSelect, type DiSelectOption } from "@/app/analisis-de-inventario/di-multi-select";
 import {
   formatPrice,
   formatPriceWithoutSixZeros,
@@ -12,29 +13,46 @@ import {
   type DateRange,
 } from "@/app/rotacion/rotacion-preamble";
 import { useRotacionViewConfig } from "@/app/rotacion/rotacion-view-config-provider";
+import { cn } from "@/lib/shared/utils";
 import type {
   RotacionCriticalBucket,
   RotacionCriticalDigestFamily,
   RotacionCriticalTaggedRow,
 } from "@/lib/rotacion/critical-digest";
+import { filterTaggedRowsForChart } from "@/lib/rotacion/chart-series";
 import {
   buildRotacionGestionKpis,
   diffRotacionGestionKpis,
   previousCalendarMonthRange,
   type RotacionGestionKpis,
-  type RotacionGestionTrendPoint,
+  type RotacionGestionMonthlySedeSeries,
 } from "@/lib/rotacion/gestion-kpis";
+
+type GestionMetric = "plata" | "unidades";
 
 type Props = {
   tagged: RotacionCriticalTaggedRow[];
   dateRange: DateRange;
   families: RotacionCriticalDigestFamily[];
   buckets: readonly RotacionCriticalBucket[];
-  sedeScopes: string[];
-  lineaKeys: string[];
-  sublineaKeys: string[];
+  sedeOptions: DiSelectOption[];
   loading?: boolean;
 };
+
+const GESTION_SEDE_BAR_COLORS = [
+  "#2563eb",
+  "#16a34a",
+  "#7c3aed",
+  "#dc2626",
+  "#0ea5e9",
+  "#eab308",
+  "#ea580c",
+  "#db2777",
+  "#0f766e",
+  "#4f46e5",
+  "#65a30d",
+  "#78716c",
+];
 
 const emptyKpis = (): RotacionGestionKpis => ({
   itemCount: 0,
@@ -42,6 +60,12 @@ const emptyKpis = (): RotacionGestionKpis => ({
   inventoryUnits: 0,
   diasInventario: 0,
   daysConsulted: 0,
+});
+
+const emptyMonthly = (): RotacionGestionMonthlySedeSeries => ({
+  months: [],
+  monthLabels: [],
+  series: [],
 });
 
 const formatDias = (value: number) => {
@@ -60,17 +84,52 @@ const formatSignedMillions = (value: number) => {
   return abs;
 };
 
+const MiniToggle = ({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: Array<{ id: string; label: string }>;
+  onChange: (value: string) => void;
+}) => (
+  <span className="inline-flex flex-wrap overflow-hidden rounded-lg border border-slate-200">
+    {options.map((option) => (
+      <button
+        key={option.id}
+        type="button"
+        onClick={() => onChange(option.id)}
+        className={cn(
+          "px-3 py-1.5 text-xs font-semibold",
+          value === option.id
+            ? "bg-amber-600 text-white"
+            : "bg-white text-slate-600 hover:bg-amber-50",
+        )}
+      >
+        {option.label}
+      </button>
+    ))}
+  </span>
+);
+
+const colorForSede = (sedeKey: string, sedeOptions: DiSelectOption[]) => {
+  const index = sedeOptions.findIndex((option) => option.value === sedeKey);
+  return GESTION_SEDE_BAR_COLORS[
+    (index >= 0 ? index : 0) % GESTION_SEDE_BAR_COLORS.length
+  ];
+};
+
 export function RotacionGestionPanel({
   tagged,
   dateRange,
   families,
   buckets,
-  sedeScopes,
-  lineaKeys,
-  sublineaKeys,
+  sedeOptions,
   loading = false,
 }: Props) {
   const { apiBasePath } = useRotacionViewConfig();
+  const [selectedSedeKeys, setSelectedSedeKeys] = useState<string[]>([]);
+  const [metric, setMetric] = useState<GestionMetric>("plata");
   const [beforeRange, setBeforeRange] = useState<DateRange>({
     start: "",
     end: "",
@@ -80,12 +139,32 @@ export function RotacionGestionPanel({
   const [beforeKpis, setBeforeKpis] = useState<RotacionGestionKpis | null>(null);
   const [afterRemoteKpis, setAfterRemoteKpis] =
     useState<RotacionGestionKpis | null>(null);
-  const [trendPoints, setTrendPoints] = useState<RotacionGestionTrendPoint[]>(
-    [],
+  const [monthly, setMonthly] = useState<RotacionGestionMonthlySedeSeries>(
+    emptyMonthly(),
   );
+  const [trendSource, setTrendSource] = useState<"roll" | "empty" | null>(null);
   const [beforeLoading, setBeforeLoading] = useState(false);
   const [afterLoading, setAfterLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const sedeScopes = useMemo(
+    () =>
+      selectedSedeKeys.length > 0
+        ? selectedSedeKeys
+        : sedeOptions.map((option) => option.value),
+    [sedeOptions, selectedSedeKeys],
+  );
+
+  const labelBySede = useMemo(
+    () => Object.fromEntries(sedeOptions.map((option) => [option.value, option.label])),
+    [sedeOptions],
+  );
+
+  useEffect(() => {
+    setSelectedSedeKeys((current) =>
+      current.filter((key) => sedeOptions.some((option) => option.value === key)),
+    );
+  }, [sedeOptions]);
 
   useEffect(() => {
     if (!dateRange.start) return;
@@ -100,9 +179,18 @@ export function RotacionGestionPanel({
     setAfterRange(dateRange);
   }, [afterLockedToBoard, dateRange]);
 
+  const taggedForKpis = useMemo(
+    () =>
+      filterTaggedRowsForChart(tagged, families, [], {
+        sedeKeys: selectedSedeKeys,
+        buckets,
+      }),
+    [buckets, families, selectedSedeKeys, tagged],
+  );
+
   const afterLocal = useMemo(
-    () => buildRotacionGestionKpis(tagged, dateRange),
-    [dateRange, tagged],
+    () => buildRotacionGestionKpis(taggedForKpis, dateRange),
+    [dateRange, taggedForKpis],
   );
 
   const useLocalAfter =
@@ -118,8 +206,6 @@ export function RotacionGestionPanel({
     families.forEach((family) => params.append("family", family));
     buckets.forEach((bucket) => params.append("buckets", bucket));
     sedeScopes.forEach((scope) => params.append("sedeScope", scope));
-    lineaKeys.forEach((key) => params.append("lineasN1", key));
-    sublineaKeys.forEach((key) => params.append("sublineas", key));
     const response = await fetch(`${apiBasePath}/gestion?${params.toString()}`, {
       cache: "no-store",
       signal,
@@ -164,9 +250,7 @@ export function RotacionGestionPanel({
     beforeRange.start,
     buckets,
     families,
-    lineaKeys,
     sedeScopes,
-    sublineaKeys,
   ]);
 
   useEffect(() => {
@@ -199,69 +283,73 @@ export function RotacionGestionPanel({
     apiBasePath,
     buckets,
     families,
-    lineaKeys,
     sedeScopes,
-    sublineaKeys,
     useLocalAfter,
   ]);
 
   useEffect(() => {
-    if (sedeScopes.length === 0) return;
+    const allScopes = sedeOptions.map((option) => option.value);
+    if (allScopes.length === 0) return;
     const params = new URLSearchParams({ mode: "trend" });
     families.forEach((family) => params.append("family", family));
     buckets.forEach((bucket) => params.append("buckets", bucket));
-    sedeScopes.forEach((scope) => params.append("sedeScope", scope));
-    void fetch(`${apiBasePath}/gestion?${params.toString()}`, { cache: "no-store" })
+    allScopes.forEach((scope) => params.append("sedeScope", scope));
+    const controller = new AbortController();
+    void fetch(`${apiBasePath}/gestion?${params.toString()}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then(async (response) => {
         const payload = (await response.json()) as {
-          points?: RotacionGestionTrendPoint[];
+          monthly?: RotacionGestionMonthlySedeSeries;
+          source?: "roll" | "empty";
         };
-        if (!response.ok) return;
-        setTrendPoints(payload.points ?? []);
+        if (controller.signal.aborted || !response.ok) return;
+        setMonthly(payload.monthly ?? emptyMonthly());
+        setTrendSource(payload.source ?? null);
       })
       .catch(() => {
-        setTrendPoints([]);
+        if (controller.signal.aborted) return;
+        setMonthly(emptyMonthly());
+        setTrendSource("empty");
       });
-  }, [apiBasePath, buckets, families, sedeScopes]);
+    return () => controller.abort();
+  }, [apiBasePath, buckets, families, sedeOptions]);
 
   const diff =
     beforeKpis && afterKpis
       ? diffRotacionGestionKpis(beforeKpis, afterKpis)
       : null;
 
-  const comparisonPoints = useMemo(() => {
-    if (!beforeKpis) return [];
-    return [
-      {
-        label: formatRangeLabel(beforeRange),
-        dias: beforeKpis.diasInventario >= NO_SALES_DI_VALUE ? 0 : beforeKpis.diasInventario,
-        items: beforeKpis.itemCount,
-        pesos: beforeKpis.inventoryValue,
-      },
-      {
-        label: formatRangeLabel(afterRange),
-        dias: afterKpis.diasInventario >= NO_SALES_DI_VALUE ? 0 : afterKpis.diasInventario,
-        items: afterKpis.itemCount,
-        pesos: afterKpis.inventoryValue,
-      },
-    ];
-  }, [afterKpis, afterRange, beforeKpis, beforeRange]);
+  const visibleSeries = useMemo(() => {
+    const selected = new Set(sedeScopes);
+    return monthly.series
+      .filter((serie) => selected.has(serie.sedeKey))
+      .map((serie) => ({
+        ...serie,
+        label: labelBySede[serie.sedeKey] ?? serie.label,
+      }));
+  }, [labelBySede, monthly.series, sedeScopes]);
 
-  const trendChart = trendPoints.length >= 2 ? trendPoints : null;
-  const lineLabels = trendChart
-    ? trendChart.map((point) => point.semanaFin.slice(5))
-    : comparisonPoints.map((point) => point.label);
-  const lineDias = trendChart
-    ? trendChart.map((point) =>
-        point.diasInventario >= NO_SALES_DI_VALUE ? 0 : point.diasInventario,
-      )
-    : comparisonPoints.map((point) => point.dias);
-  const lineItems = trendChart
-    ? trendChart.map((point) => point.itemCount)
-    : comparisonPoints.map((point) => point.items);
-  const linePesos = trendChart
-    ? trendChart.map((point) => point.inventoryValue / 1_000_000)
-    : comparisonPoints.map((point) => point.pesos / 1_000_000);
+  const chartValues = useMemo(
+    () =>
+      visibleSeries.map((serie) => ({
+        ...serie,
+        data:
+          metric === "plata"
+            ? serie.inventoryValue.map((value) => value / 1_000_000)
+            : serie.inventoryUnits,
+      })),
+    [metric, visibleSeries],
+  );
+
+  const formatBarValue = (value: number | null) => {
+    if (value == null || value === 0) return "";
+    if (metric === "plata") {
+      return `$ ${value.toLocaleString("es-CO", { maximumFractionDigits: 0 })} M`;
+    }
+    return value.toLocaleString("es-CO", { maximumFractionDigits: 0 });
+  };
 
   const busy = loading || beforeLoading || afterLoading;
 
@@ -270,13 +358,35 @@ export function RotacionGestionPanel({
       <CardHeader className="pb-3">
         <CardTitle className="text-slate-900">Resultado de gestion</CardTitle>
         <CardDescription>
-          Compara dos rangos del mismo corte D+0+S para mostrar capital
-          liberado, menos ítems problema y menos días de inventario. La
-          tendencia semanal sale del roll (ventana 30 días) si ya esta
-          poblado.
+          Totales mes a mes de inventario D+0+S (plata o unidades). Cada sede
+          queda en su propia barra; no se mezclan. Las tarjetas Antes/Ahora si
+          suman el alcance seleccionado.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_auto_auto]">
+          <DiMultiSelect
+            label="Sedes (este grafico)"
+            values={selectedSedeKeys}
+            options={sedeOptions}
+            emptyLabel="Todas"
+            searchable
+            searchPlaceholder="Buscar sede..."
+            onChange={setSelectedSedeKeys}
+          />
+          <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Ver
+            <MiniToggle
+              value={metric}
+              options={[
+                { id: "plata", label: "Plata" },
+                { id: "unidades", label: "Unidades" },
+              ]}
+              onChange={(value) => setMetric(value as GestionMetric)}
+            />
+          </label>
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             Antes
@@ -407,68 +517,69 @@ export function RotacionGestionPanel({
           </div>
         ) : null}
 
-        {lineLabels.length >= 2 ? (
-          <div className="grid gap-4 xl:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 p-2">
-              <p className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Dias e items
-              </p>
-              <LineChart
-                height={280}
-                margin={{ left: 8, right: 8, top: 16, bottom: 8 }}
-                xAxis={[{ data: lineLabels, scaleType: "point" }]}
-                yAxis={[
-                  { id: "dias", label: "Dias" },
-                  { id: "items", label: "Items", position: "right" },
-                ]}
-                series={[
-                  {
-                    data: lineDias,
-                    label: "Dias inv.",
-                    color: "#9f1239",
-                    yAxisId: "dias",
-                    valueFormatter: (value: number | null) =>
-                      value == null ? "—" : formatDias(value),
+        {monthly.months.length > 0 && chartValues.length > 0 ? (
+          <div className="rounded-xl border border-slate-200 p-2">
+            <p className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              {metric === "plata"
+                ? "Inventario comprometido por mes ($ millones)"
+                : "Unidades comprometidas por mes"}
+            </p>
+            <p className="px-2 text-[11px] text-slate-500">
+              Foto del ultimo corte semanal de cada mes. Varias sedes = barras
+              agrupadas, no un total mezclado.
+            </p>
+            <BarChart
+              height={360}
+              margin={{ left: 8, right: 16, top: 28, bottom: 8 }}
+              xAxis={[
+                {
+                  data: monthly.monthLabels,
+                  scaleType: "band",
+                  tickLabelStyle: {
+                    fontSize: 11,
+                    angle: -45,
+                    textAnchor: "end",
                   },
-                  {
-                    data: lineItems,
-                    label: "Items",
-                    color: "#475569",
-                    yAxisId: "items",
-                    valueFormatter: (value: number | null) =>
-                      value == null ? "—" : formatItems(value),
-                  },
-                ]}
-                grid={{ horizontal: true }}
-              />
-            </div>
-            <div className="rounded-xl border border-slate-200 p-2">
-              <p className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Inventario comprometido ($ millones)
-              </p>
-              <LineChart
-                height={280}
-                margin={{ left: 8, right: 16, top: 16, bottom: 8 }}
-                xAxis={[{ data: lineLabels, scaleType: "point" }]}
-                series={[
-                  {
-                    data: linePesos,
-                    label: "Inventario $",
-                    color: "#d97706",
-                    area: true,
-                    valueFormatter: (value: number | null) =>
-                      value == null
-                        ? "—"
-                        : `$ ${value.toLocaleString("es-CO", {
-                            maximumFractionDigits: 0,
-                          })} M`,
-                  },
-                ]}
-                grid={{ horizontal: true }}
-              />
-            </div>
+                  height: 72,
+                },
+              ]}
+              yAxis={[
+                {
+                  valueFormatter: (value: number | null) =>
+                    value == null
+                      ? ""
+                      : value.toLocaleString("es-CO", {
+                          maximumFractionDigits: 0,
+                        }),
+                },
+              ]}
+              series={chartValues.map((serie) => ({
+                data: serie.data,
+                label: serie.label,
+                color: colorForSede(serie.sedeKey, sedeOptions),
+                valueFormatter: (value: number | null) =>
+                  value == null || value === 0 ? "—" : formatBarValue(value),
+              }))}
+              barLabel={
+                chartValues.length > 4
+                  ? undefined
+                  : (item) =>
+                      item.value == null || item.value === 0
+                        ? null
+                        : formatBarValue(Number(item.value))
+              }
+              grid={{ horizontal: true }}
+            />
           </div>
-        ) : null}
+        ) : (
+          <p className="py-6 text-center text-sm text-slate-500">
+            {trendSource === "empty"
+              ? "Aun no hay historial mensual. Hay que poblar el roll semanal en el servidor."
+              : sedeScopes.length === 0
+                ? "No hay sedes en el grafico."
+                : "Cargando totales mes a mes..."}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

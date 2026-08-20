@@ -5,6 +5,7 @@ import { DEFAULT_ABCD_CONFIG } from "@/app/rotacion/rotacion-preamble";
 import { tagRotacionCriticalRows } from "@/lib/rotacion/critical-digest";
 import {
   aggregateGestionTrendPoints,
+  buildGestionMonthlySedeSeries,
   buildRotacionGestionKpis,
   diffRotacionGestionKpis,
   previousCalendarMonthRange,
@@ -140,5 +141,75 @@ describe("gestion KPIs", () => {
     assert.equal(points.length, 1);
     assert.equal(points[0]?.itemCount, 15);
     assert.equal(points[0]?.inventoryValue, 150);
+  });
+
+  it("el grafico mensual no mezcla sedes y toma el ultimo corte del mes", () => {
+    const monthly = buildGestionMonthlySedeSeries(
+      [
+        {
+          semanaFin: "2026-06-07",
+          empresa: "mtodo",
+          sedeId: "001",
+          familia: "manufactura",
+          bucket: "cero",
+          itemCount: 10,
+          inventoryValue: 100,
+          inventoryUnits: 4,
+          demandaUnits: 0,
+          trackedDays: 30,
+        },
+        {
+          semanaFin: "2026-06-28",
+          empresa: "mtodo",
+          sedeId: "001",
+          familia: "manufactura",
+          bucket: "cero",
+          itemCount: 8,
+          inventoryValue: 80,
+          inventoryUnits: 3,
+          demandaUnits: 0,
+          trackedDays: 30,
+        },
+        {
+          semanaFin: "2026-06-28",
+          empresa: "mtodo",
+          sedeId: "002",
+          familia: "manufactura",
+          bucket: "cero",
+          itemCount: 5,
+          inventoryValue: 50,
+          inventoryUnits: 2,
+          demandaUnits: 0,
+          trackedDays: 30,
+        },
+        {
+          semanaFin: "2026-07-05",
+          empresa: "mtodo",
+          sedeId: "001",
+          familia: "manufactura",
+          bucket: "cero",
+          itemCount: 1,
+          inventoryValue: 10,
+          inventoryUnits: 1,
+          demandaUnits: 0,
+          trackedDays: 30,
+        },
+      ],
+      {
+        sedeLabels: {
+          "mtodo::001": "Floresta",
+          "mtodo::002": "Calle 80",
+        },
+      },
+    );
+    assert.deepEqual(monthly.months, ["2026-06", "2026-07"]);
+    assert.equal(monthly.series.length, 2);
+    const floresta = monthly.series.find((serie) => serie.sedeKey === "mtodo::001");
+    const calle80 = monthly.series.find((serie) => serie.sedeKey === "mtodo::002");
+    assert.equal(floresta?.label, "Floresta");
+    assert.deepEqual(floresta?.inventoryValue, [80, 10]);
+    assert.deepEqual(floresta?.inventoryUnits, [3, 1]);
+    assert.deepEqual(calle80?.inventoryValue, [50, 0]);
+    assert.deepEqual(calle80?.inventoryUnits, [2, 0]);
   });
 });

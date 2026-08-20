@@ -132,7 +132,7 @@ SQL
 '
 ```
 
-Panel de gestion (tendencia semanal). Aplicar una vez y poblar el roll:
+Panel de gestion (barras mensuales por sede). Aplicar una vez y poblar el roll:
 
 ```bash
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260820_rotacion_gestion_semana_roll.sql
@@ -372,7 +372,7 @@ porcentajes.
 | `rotacion_cero_item_estado` | migraciones | estado operativo cero/restock |
 | `rotacion_cero_item_estado_audit` | migraciones | historial de cambios |
 | `rotacion_restock_surtido_foto` | migraciones | foto JPEG/PNG/WebP en base64 de items restock ya surtidos |
-| `rotacion_gestion_semana_roll` | refresh nocturno | tendencia semanal (ventana 30d) de D/0/S aproximado para el panel de gestion; `demandaD` = DI≥45 (no es ABCD D) |
+| `rotacion_gestion_semana_roll` | refresh nocturno | historial semanal (ventana 30d) de D/0/S aproximado; el panel de gestion lo agrega a barras mensuales por sede; `demandaD` = DI≥45 (no es ABCD D) |
 
 DIC (dias de inventario) = `inventory_units * tracked_days / demanda_units`, con
 `demanda_units = total_units + uds_equivalentes` y `uds_equivalentes` = salidas

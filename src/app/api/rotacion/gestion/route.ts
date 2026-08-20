@@ -9,9 +9,7 @@ import type { RotacionCriticalBucket } from "@/lib/rotacion/critical-digest";
 import type { RotacionCriticalDigestFamily } from "@/lib/rotacion/critical-digest";
 import { loadRotacionGestionKpis } from "@/lib/rotacion/server/load-gestion-kpis";
 import { loadRotacionGestionTrend } from "@/lib/rotacion/server/load-gestion-trend";
-import {
-  aggregateGestionTrendPoints,
-} from "@/lib/rotacion/gestion-kpis";
+import { buildGestionMonthlySedeSeries } from "@/lib/rotacion/gestion-kpis";
 
 const CACHE_CONTROL = "private, max-age=120, stale-while-revalidate=600";
 
@@ -87,14 +85,14 @@ export async function GET(request: Request) {
   try {
     if (mode === "trend") {
       const rows = await loadRotacionGestionTrend(sedeScopes);
-      const points = aggregateGestionTrendPoints(rows, {
+      const monthly = buildGestionMonthlySedeSeries(rows, {
         sedeKeys: sedeScopes,
         families,
         buckets,
       });
       return withSession(
         NextResponse.json(
-          { points, source: rows.length > 0 ? "roll" : "empty" },
+          { monthly, source: rows.length > 0 ? "roll" : "empty" },
           { headers: { "Cache-Control": CACHE_CONTROL } },
         ),
       );
