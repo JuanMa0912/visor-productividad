@@ -18,6 +18,7 @@ const cell = (
   pvu: 0,
   pcu: 0,
   margenPct: 0,
+  transito: 0,
   ...overrides,
 });
 

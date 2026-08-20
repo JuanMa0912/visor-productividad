@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   isComercializadoraEmpresa,
   ocEntradaInvTipdocSql,
+  transitoTipdocSql,
   ocEntradaPoTipdocSql,
   ocEntradaQtySql,
   ocEntradaTipdocSql,
@@ -61,13 +62,32 @@ describe("precios-proveedor labels", () => {
     assert.match(sql, /tipdoc.*= 'ET'/i);
   });
 
-  it("inventario ET/EF vs pedido FR: Mercatodo incluye tránsito", () => {
+  it("la entrada real es solo EF: el transito NUNCA cuenta como recibido", () => {
     const inv = ocEntradaInvTipdocSql("empresa", "tipdoc");
+    // Invariante del tablero: ET es mercancia en camino y se informa aparte.
+    // Si alguien vuelve a meter 'ET' aqui, kilos, costo y margen se inflan, y
+    // ademas el transito taparia el pedido FR que si trajo mercancia (invCos).
+    assert.match(inv, /= 'EF'/);
+    assert.doesNotMatch(inv, /'ET'/);
+    // Y no depende de la empresa: mercamio, mtodo y bogota por igual.
+    assert.equal(
+      ocEntradaInvTipdocSql("mercamio", "tipdoc"),
+      ocEntradaInvTipdocSql("mtodo", "tipdoc"),
+    );
+  });
+
+  it("el transito se identifica aparte y viaja en el conjunto consultado", () => {
+    const transito = transitoTipdocSql("tipdoc");
+    assert.match(transito, /= 'ET'/);
+    assert.doesNotMatch(transito, /'EF'/);
+
     const po = ocEntradaPoTipdocSql("empresa", "tipdoc");
-    const all = ocEntradaTipdocSql("empresa", "tipdoc");
-    assert.match(inv, /'ET',\s*'EF'/);
     assert.match(po, /tipdoc.*= 'FR'/i);
-    assert.match(all, /ET/);
-    assert.match(all, /FR/);
+
+    // El SELECT trae las tres familias; el bucketing decide cual suma.
+    const all = ocEntradaTipdocSql("empresa", "tipdoc");
+    assert.match(all, /'ET'/);
+    assert.match(all, /'EF'/);
+    assert.match(all, /'FR'/);
   });
 });
