@@ -2,9 +2,8 @@
 
 import { useId } from "react";
 import {
-  UAID_LOGO_EDGES,
+  UAID_LOGO_DOT,
   UAID_LOGO_GRADIENT,
-  UAID_LOGO_NODES,
   UAID_LOGO_U_PATH,
   UAID_LOGO_U_STROKE,
   UAID_LOGO_VIEWBOX,
@@ -13,8 +12,6 @@ import {
 type UaidLogoProps = {
   className?: string;
 };
-
-const nodeAt = (index: number) => UAID_LOGO_NODES[index];
 
 function UaidLogoGlyph() {
   return (
@@ -29,38 +26,20 @@ function UaidLogoGlyph() {
         strokeWidth={UAID_LOGO_U_STROKE}
         fill="none"
       />
-      {UAID_LOGO_EDGES.map(([from, to]) => {
-        const a = nodeAt(from);
-        const b = nodeAt(to);
-        return (
-          <line
-            key={`${from}-${to}`}
-            x1={a.cx}
-            y1={a.cy}
-            x2={b.cx}
-            y2={b.cy}
-            strokeWidth={1.15}
-            strokeOpacity={0.92}
-          />
-        );
-      })}
-      {UAID_LOGO_NODES.map((node) => (
-        <circle
-          key={`${node.cx}-${node.cy}`}
-          cx={node.cx}
-          cy={node.cy}
-          r={node.r}
-          fill="currentColor"
-          stroke="none"
-        />
-      ))}
+      <circle
+        cx={UAID_LOGO_DOT.cx}
+        cy={UAID_LOGO_DOT.cy}
+        r={UAID_LOGO_DOT.r}
+        fill="currentColor"
+        stroke="none"
+      />
     </g>
   );
 }
 
 /**
  * Marca UAID a color para la barra del portal.
- * U + tres nodos: unidad que sostiene una red de datos.
+ * U minimalista con un punto de dato.
  */
 export function UaidLogoMark({ className }: UaidLogoProps) {
   const rawId = useId();
@@ -100,22 +79,12 @@ export function UaidLogoMark({ className }: UaidLogoProps) {
           y2="18"
           gradientUnits="userSpaceOnUse"
         >
-          <stop offset="0%" stopColor="#fff" stopOpacity="0.28" />
+          <stop offset="0%" stopColor="#fff" stopOpacity="0.18" />
           <stop offset="100%" stopColor="#fff" stopOpacity="0" />
         </linearGradient>
       </defs>
       <rect width="32" height="32" rx="9" fill={`url(#${fillId})`} />
       <rect width="32" height="32" rx="9" fill={`url(#${shineId})`} />
-      <rect
-        x="0.7"
-        y="0.7"
-        width="30.6"
-        height="30.6"
-        rx="8.3"
-        fill="none"
-        stroke="#fff"
-        strokeOpacity="0.22"
-      />
       <g className="text-white" style={{ color: "#fff" }}>
         <UaidLogoGlyph />
       </g>

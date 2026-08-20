@@ -1,24 +1,19 @@
 import { ImageResponse } from "next/og";
 import {
+  UAID_LOGO_DOT,
   UAID_LOGO_GRADIENT,
-  UAID_LOGO_NODES,
   UAID_LOGO_U_PATH,
   UAID_LOGO_U_STROKE,
-  uaidLogoEdgePoints,
 } from "@/lib/shared/uaid-logo";
 
 /**
  * Favicon dinamico del Portal UAID.
- *
- * Next.js detecta `icon.tsx` en `src/app/` y lo registra como
- * `<link rel="icon">`. Misma marca que la barra (U + red de datos).
+ * Misma marca que la barra: U fina + punto de dato.
  */
 export const size = { width: 32, height: 32 };
 export const contentType = "image/png";
 
 export default function Icon() {
-  const edges = uaidLogoEdgePoints();
-
   return new ImageResponse(
     (
       <div
@@ -38,27 +33,12 @@ export default function Icon() {
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          {edges.map((edge) => (
-            <line
-              key={`${edge.from.cx}-${edge.to.cx}`}
-              x1={edge.from.cx}
-              y1={edge.from.cy}
-              x2={edge.to.cx}
-              y2={edge.to.cy}
-              stroke="#fff"
-              strokeWidth="1.15"
-              strokeLinecap="round"
-            />
-          ))}
-          {UAID_LOGO_NODES.map((node) => (
-            <circle
-              key={`${node.cx}-${node.cy}`}
-              cx={node.cx}
-              cy={node.cy}
-              r={node.r}
-              fill="#fff"
-            />
-          ))}
+          <circle
+            cx={UAID_LOGO_DOT.cx}
+            cy={UAID_LOGO_DOT.cy}
+            r={UAID_LOGO_DOT.r}
+            fill="#fff"
+          />
         </svg>
       </div>
     ),

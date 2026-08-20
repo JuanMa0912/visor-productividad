@@ -1,5 +1,5 @@
 /**
- * Geometría de la marca UAID (U + red de datos).
+ * Geometría de la marca UAID: U fina + un punto de dato.
  * Misma figura en header, favicon y encabezados de impresión.
  */
 
@@ -11,26 +11,11 @@ export const UAID_LOGO_GRADIENT = [
   { offset: "100%", color: "#4338ca" },
 ] as const;
 
-/** U geométrica: unidad que sostiene la red. */
+/** U abierta, trazo fino, cuenco redondo. */
 export const UAID_LOGO_U_PATH =
-  "M10 11.2V20.4C10 23.85 12.7 25.9 16 25.9C19.3 25.9 22 23.85 22 20.4V11.2";
+  "M10.6 8.6V20.35C10.6 24.05 13.05 26.45 16 26.45C18.95 26.45 21.4 24.05 21.4 20.35V8.6";
 
-export const UAID_LOGO_U_STROKE = 2.55;
+export const UAID_LOGO_U_STROKE = 1.7;
 
-export const UAID_LOGO_NODES = [
-  { cx: 10, cy: 11.2, r: 1.55 },
-  { cx: 22, cy: 11.2, r: 1.55 },
-  { cx: 16, cy: 16.15, r: 1.72 },
-] as const;
-
-export const UAID_LOGO_EDGES: ReadonlyArray<readonly [number, number]> = [
-  [0, 2],
-  [2, 1],
-];
-
-export function uaidLogoEdgePoints() {
-  return UAID_LOGO_EDGES.map(([from, to]) => ({
-    from: UAID_LOGO_NODES[from],
-    to: UAID_LOGO_NODES[to],
-  }));
-}
+/** Punto de dato en el hueco de la U. */
+export const UAID_LOGO_DOT = { cx: 16, cy: 14.2, r: 1.05 } as const;

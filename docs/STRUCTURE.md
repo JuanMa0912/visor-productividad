@@ -79,7 +79,7 @@ Codigo compartido sin UI de pagina.
 | `path-labels.ts` | etiquetas legibles para rutas en presencia/accesos |
 | `item-drilldown-links.ts` | links entre modulos manteniendo filtros |
 | `uaid-brand.ts` | versión e identidad visual UAID 5.0 (login primero; shell después) |
-| `uaid-logo.ts` | geometría de la marca UAID (U + red de datos) para header/favicon |
+| `uaid-logo.ts` | geometría de la marca UAID (U fina + punto de dato) para header/favicon |
 | `portal-permissions.test.ts` | tests de permisos seccion/subtablero/rotacion |
 
 ### Dominios
@@ -168,7 +168,7 @@ acotados al dominio cuando se toquen.
 | `PresenceHeartbeat.tsx` | ping de uso real a `/api/auth/heartbeat`; a los 5 min sin clic/teclado/toque/navegacion cierra la sesion |
 | `TopBar.tsx` | barra usada por la home de productividad |
 | `portal/*` | top bar global, branding, footer, menu de usuario, toaster y tarjetas hub. En tableros, el atajo es el grid a `/secciones`; no hay "Volver a venta/productividad/horario". El botón Volver queda para flujos anidados (admin, checklists, kardex, horarios-guardados). |
-| `portal/uaid-logo.tsx` | marca UAID (U + red de datos) de la barra, favicon y encabezados de impresión |
+| `portal/uaid-logo.tsx` | marca UAID (U fina + punto de dato) de la barra, favicon y encabezados de impresión |
 | `portal/portal-control-room.tsx` | sala de control de `/secciones` (módulos con los mismos accesos que los hubs; sin preview `/dev`) |
 | `portal/login-cinematic-*`, `login-brand-copy.tsx` | cerebro 3D UAID 5.0 en el panel izquierdo de login/auth |
 | `productividad/*` | controles/skeleton/empty states de productividad |
