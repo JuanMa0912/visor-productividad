@@ -6,6 +6,7 @@ import {
   type BuildMatrixExportOptions,
   type MatrixExportRow,
 } from "@/lib/informe-variacion/export-matrix";
+import { stripInformeSedeDisplayName } from "@/lib/informe-variacion/labels";
 
 const HEADER_FILL = "FF1E3A5F";
 const HEADER_FONT = "FFFFFFFF";
@@ -96,7 +97,7 @@ export const writeInformeMatrixWorkbook = async ({
 
   payload.sedes.forEach((sede, index) => {
     const cell = headerRow.getCell(index + 2);
-    cell.value = `${sede.s.replace(/^\d+ /, "")}\n${sede.e.slice(0, 4)}`;
+    cell.value = `${stripInformeSedeDisplayName(sede.s)}\n${sede.e.slice(0, 4)}`;
     cell.font = { bold: true, color: { argb: HEADER_FONT }, size: 8 };
     fillCell(cell, HEADER_FILL);
     borderCell(cell);

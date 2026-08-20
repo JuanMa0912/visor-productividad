@@ -5,6 +5,7 @@ import {
 } from "@/lib/informe-variacion/aggregate";
 import { computeVariationPct } from "@/lib/informe-variacion/format";
 import { readInformeRowPeriodTripleForLevel } from "@/lib/informe-variacion/informe-metric-values";
+import { stripInformeSedeDisplayName } from "@/lib/informe-variacion/labels";
 import { INFORME_EMPRESA_ORDER, type InformeMetric } from "@/lib/informe-variacion/types";
 
 export type InformeRankingDimension =
@@ -37,7 +38,17 @@ export const clampInformeRankingLimit = (value: number): number => {
   return Math.min(200, Math.max(5, Math.round(value)));
 };
 
-export type InformeRankingSort = "cur" | "yoy" | "mom";
+export type InformeRankingSortCol = "name" | "cur" | "prev" | "var" | number;
+
+export type InformeRankingTableSort = {
+  col: InformeRankingSortCol;
+  dir: number;
+};
+
+export const DEFAULT_INFORME_RANKING_SORT: InformeRankingTableSort = {
+  col: "cur",
+  dir: 1,
+};
 
 export type InformeRankingRow = {
   key: number;
@@ -71,7 +82,7 @@ const labelsForDimension = (
     return INFORME_EMPRESA_ORDER.map((empresa) => empresa.label);
   }
   if (dimension === "sede") {
-    return payload.sedes.map((sede) => sede.s);
+    return payload.sedes.map((sede) => stripInformeSedeDisplayName(sede.s));
   }
   if (dimension === "lin") return payload.lins;
   if (dimension === "sub") return payload.subs;
@@ -99,17 +110,22 @@ const rankingKeyForRow = (
   return row[keyIndex];
 };
 
-const sortValue = (
-  total: PeriodTriple,
-  sort: InformeRankingSort,
+const numericSortValue = (
+  row: InformeRankingRow,
+  col: Exclude<InformeRankingSortCol, "name">,
 ): number => {
-  if (sort === "yoy") {
-    return computeVariationPct(total[0], total[2]) ?? (total[0] > 0 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+  if (typeof col === "number") {
+    const values = row.perSede[col] ?? emptyTriple();
+    return values[0];
   }
-  if (sort === "mom") {
-    return computeVariationPct(total[0], total[1]) ?? (total[0] > 0 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+  if (col === "prev") return row.total[1];
+  if (col === "var") {
+    return (
+      computeVariationPct(row.total[0], row.total[1]) ??
+      (row.total[0] > 0 ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY)
+    );
   }
-  return total[0];
+  return row.total[0];
 };
 
 export const buildInformeRankingRows = ({
@@ -117,14 +133,14 @@ export const buildInformeRankingRows = ({
   metric,
   pass,
   dimension,
-  sort = "cur",
+  sort = DEFAULT_INFORME_RANKING_SORT,
   limit = 20,
 }: {
   payload: Prepared;
   metric: InformeMetric;
   pass: (row: Prepared["rows"][number]) => boolean;
   dimension: InformeRankingDimension;
-  sort?: InformeRankingSort;
+  sort?: InformeRankingTableSort;
   limit?: number;
 }): InformeRankingRow[] => {
   const keyIndex = keyIndexForDimension(dimension);
@@ -132,6 +148,7 @@ export const buildInformeRankingRows = ({
   const sedeCount = payload.sedes.length;
   const buckets = new Map<number, { total: PeriodTriple; perSede: PeriodTriple[] }>();
   const cappedLimit = clampInformeRankingLimit(limit);
+  const dir = sort.dir < 0 ? -1 : 1;
 
   for (const row of payload.rows) {
     if (!pass(row)) continue;
@@ -166,7 +183,16 @@ export const buildInformeRankingRows = ({
   }));
 
   rows.sort((a, b) => {
-    const diff = sortValue(b.total, sort) - sortValue(a.total, sort);
+    if (sort.col === "name") {
+      const byOrder =
+        dimension === "sede" || dimension === "emp"
+          ? a.key - b.key
+          : a.label.localeCompare(b.label, "es");
+      if (byOrder !== 0) return byOrder * dir;
+      return a.label.localeCompare(b.label, "es");
+    }
+    const diff =
+      (numericSortValue(b, sort.col) - numericSortValue(a, sort.col)) * dir;
     if (diff !== 0) return diff;
     return a.label.localeCompare(b.label, "es");
   });

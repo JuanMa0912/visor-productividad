@@ -31,14 +31,16 @@ import {
   type InformeMetric,
   type InformeVariacionPayload,
 } from "@/lib/informe-variacion/types";
+import { stripInformeSedeDisplayName } from "@/lib/informe-variacion/labels";
 import { cn } from "@/lib/shared/utils";
 import { VariationChip } from "@/app/informe-variacion/informe-variacion-chips";
 import { MatrixTable } from "@/app/informe-variacion/informe-variacion-matrix";
 import { InformeEmpresaSummaryCards, InformeRankingTable } from "@/app/informe-variacion/informe-variacion-ranking";
 import { DiMultiSelect } from "@/app/analisis-de-inventario/di-multi-select";
-import type {
-  InformeRankingDimension,
-  InformeRankingSort,
+import {
+  DEFAULT_INFORME_RANKING_SORT,
+  type InformeRankingDimension,
+  type InformeRankingTableSort,
 } from "@/lib/informe-variacion/ranking";
 
 type Prepared = ReturnType<typeof prepareInformeData>;
@@ -87,7 +89,9 @@ function InformeVariacionBoardReady({
   const [rankingMetric, setRankingMetric] = useState<InformeMetric>("v");
   const [rankingDimension, setRankingDimension] =
     useState<InformeRankingDimension>("item");
-  const [rankingSort, setRankingSort] = useState<InformeRankingSort>("cur");
+  const [rankingSort, setRankingSort] = useState<InformeRankingTableSort>(
+    DEFAULT_INFORME_RANKING_SORT,
+  );
   const [rankingLimit, setRankingLimit] = useState(20);
   const dualCompare =
     payload.periods.yoy.from !== payload.periods.mom.from ||
@@ -792,7 +796,7 @@ function InformeFilters({
     )
     .map(({ index, sede }) => ({
       value: String(index),
-      label: `${sede.e} · ${sede.s}`,
+      label: `${sede.e} · ${stripInformeSedeDisplayName(sede.s)}`,
     }));
 
   const catOptions = useMemo(
@@ -1210,7 +1214,9 @@ function SedeSummaryTable({
                   const part = total[0] > 0 ? (values[0] / total[0]) * 100 : 0;
                   return (
                     <tr key={index} className="border-b border-slate-100">
-                      <td className={cn(tdClass("left"), "pl-8")}>{payload.sedes[index].s}</td>
+                      <td className={cn(tdClass("left"), "pl-8")}>
+                        {stripInformeSedeDisplayName(payload.sedes[index].s)}
+                      </td>
                       <td className={tdClass("right", "font-semibold")}>
                         {formatInformeValue(values[0], metric)}
                       </td>

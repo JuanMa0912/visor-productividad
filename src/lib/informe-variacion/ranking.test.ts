@@ -38,7 +38,7 @@ describe("buildInformeRankingRows", () => {
       metric: "v",
       pass: () => true,
       dimension: "item",
-      sort: "cur",
+      sort: { col: "cur", dir: 1 },
     });
     assert.equal(rows[0]?.label, "Pollo entero");
     assert.equal(rows[0]?.total[0], 200);
@@ -89,6 +89,43 @@ describe("buildInformeRankingRows", () => {
     assert.equal(rows[0]?.label, "Comercializadora");
     assert.equal(rows[0]?.total[0], 240);
     assert.equal(rows[1]?.label, "Mercamio");
+  });
+
+  it("muestra sedes sin código y respeta el orden estipulado al ordenar por nombre", () => {
+    const payload = prepareInformeData({
+      ...samplePayload(),
+      sedes: [
+        { key: "bogota|001", e: "Merkmios", s: "01 Bogotá", yoyOk: true },
+        { key: "mercamio|001", e: "Mercamio", s: "01 Calle 5ta", yoyOk: true },
+        { key: "mtodo|001", e: "Comercializadora", s: "01 Floresta", yoyOk: true },
+      ],
+      rows: [
+        [0, 0, 0, 0, 0, 10, 10, 10, 30, 30, 30, 0, 0, 0],
+        [1, 0, 0, 0, 1, 10, 10, 10, 20, 20, 20, 0, 0, 0],
+        [2, 0, 0, 0, 2, 10, 10, 10, 90, 90, 90, 0, 0, 0],
+      ],
+    });
+    const byName = buildInformeRankingRows({
+      payload,
+      metric: "v",
+      pass: () => true,
+      dimension: "sede",
+      sort: { col: "name", dir: 1 },
+    });
+    assert.deepEqual(
+      byName.map((row) => row.label),
+      ["Floresta", "Calle 5ta", "Bogotá"],
+    );
+
+    const bySedeCol = buildInformeRankingRows({
+      payload,
+      metric: "v",
+      pass: () => true,
+      dimension: "item",
+      sort: { col: 0, dir: 1 },
+    });
+    assert.equal(bySedeCol[0]?.label, "Costilla");
+    assert.equal(bySedeCol[0]?.perSede[0]?.[0], 90);
   });
 });
 

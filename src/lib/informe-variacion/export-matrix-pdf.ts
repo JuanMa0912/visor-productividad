@@ -6,6 +6,7 @@ import {
   matrixExportMetaLine,
   type BuildMatrixExportOptions,
 } from "@/lib/informe-variacion/export-matrix";
+import { stripInformeSedeDisplayName } from "@/lib/informe-variacion/labels";
 
 export type InformeMatrixPdfOptions = BuildMatrixExportOptions & {
   periodLabel: string;
@@ -42,7 +43,7 @@ export const buildInformeMatrixPdfDocument = ({
     [
       "Categoria / Linea / Sublinea / Item",
       ...payload.sedes.map(
-        (sede) => `${sede.s.replace(/^\d+ /, "")}\n${sede.e.slice(0, 4)}`,
+        (sede) => `${stripInformeSedeDisplayName(sede.s)}\n${sede.e.slice(0, 4)}`,
       ),
     ],
   ];

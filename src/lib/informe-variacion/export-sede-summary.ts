@@ -12,6 +12,7 @@ import {
 } from "@/lib/informe-variacion/format";
 import type { InformeMetric, InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { INFORME_EMPRESA_ORDER } from "@/lib/informe-variacion/types";
+import { stripInformeSedeDisplayName } from "@/lib/informe-variacion/labels";
 import type { prepareInformeData } from "@/lib/informe-variacion/aggregate";
 
 type Prepared = ReturnType<typeof prepareInformeData>;
@@ -130,7 +131,7 @@ export const buildSedeSummaryExportRows = (
       rows.push({
         kind: "sede",
         empresa: empresa.label,
-        sede: payload.sedes[index]!.s,
+        sede: stripInformeSedeDisplayName(payload.sedes[index]!.s),
         current,
         yoyBase,
         yoyPct: variationPctLabel(values[0], values[2], payload.sedeYoy[index]),

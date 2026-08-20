@@ -23,18 +23,20 @@ export const informeEmpresaLabel = (empresa: string): string => {
   return empresa.trim() || "—";
 };
 
+/** Quita el código de centro (`01 Floresta` → `Floresta`) en payloads viejos. */
+export const stripInformeSedeDisplayName = (name: string): string =>
+  name.replace(/^\d+\s+/, "").trim();
+
 export const formatInformeSedeLabel = (
   empresa: string,
   idCo: string,
   fallbackLabel?: string,
 ): string => {
   const co = idCo.trim().padStart(3, "0");
-  const shortCo = co.slice(-2);
   const canonical =
     getCanonicalSedeName(co, empresa.trim().toLowerCase()) ??
-    fallbackLabel?.replace(/^\d+\s*/, "").trim();
-  const name = canonical || fallbackLabel || co;
-  return `${shortCo} ${name}`;
+    stripInformeSedeDisplayName(fallbackLabel ?? "");
+  return canonical || fallbackLabel?.trim() || co;
 };
 
 export const buildInformeCategoriaLabel = (idTipo: string): string => {

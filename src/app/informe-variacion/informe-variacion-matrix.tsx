@@ -18,6 +18,7 @@ import {
   shouldConvertHuevosToUndIndividuales,
 } from "@/lib/informe-variacion/huevos-individual-und";
 import type { InformeMetric } from "@/lib/informe-variacion/types";
+import { stripInformeSedeDisplayName } from "@/lib/informe-variacion/labels";
 import { cn } from "@/lib/shared/utils";
 import type { prepareInformeData } from "@/lib/informe-variacion/aggregate";
 
@@ -433,7 +434,7 @@ export function MatrixTable({
                 }
                 title={`${sede.e} — clic para ordenar`}
               >
-                {sede.s.replace(/^\d+ /, "")}
+                {stripInformeSedeDisplayName(sede.s)}
                 {sortArrow(index)}
                 <div className="font-normal text-slate-400">{sede.e.slice(0, 4)}</div>
               </th>

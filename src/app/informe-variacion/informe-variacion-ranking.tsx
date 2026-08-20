@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import {
   aggregateBySede,
   type prepareInformeData,
@@ -17,8 +17,10 @@ import {
   buildInformeEmpresaSummary,
   buildInformeRankingRows,
   type InformeRankingDimension,
-  type InformeRankingSort,
+  type InformeRankingSortCol,
+  type InformeRankingTableSort,
 } from "@/lib/informe-variacion/ranking";
+import { stripInformeSedeDisplayName } from "@/lib/informe-variacion/labels";
 import type { InformeMetric } from "@/lib/informe-variacion/types";
 import { cn } from "@/lib/shared/utils";
 import { VariationChip } from "@/app/informe-variacion/informe-variacion-chips";
@@ -31,8 +33,8 @@ type RankingProps = {
   onMetricChange: (metric: InformeMetric) => void;
   dimension: InformeRankingDimension;
   onDimensionChange: (dimension: InformeRankingDimension) => void;
-  sort: InformeRankingSort;
-  onSortChange: (sort: InformeRankingSort) => void;
+  sort: InformeRankingTableSort;
+  onSortChange: (sort: InformeRankingTableSort) => void;
   limit: number;
   onLimitChange: (limit: number) => void;
   mode: "yoy" | "mom";
@@ -66,6 +68,39 @@ const MiniToggle = ({
   </span>
 );
 
+const SortableTh = ({
+  children,
+  align,
+  active,
+  dir,
+  onClick,
+  sticky = false,
+  title,
+}: {
+  children: ReactNode;
+  align: "left" | "right" | "center";
+  active: boolean;
+  dir: number;
+  onClick: () => void;
+  sticky?: boolean;
+  title?: string;
+}) => (
+  <th
+    className={cn(
+      "cursor-pointer select-none px-2 py-2 font-semibold text-slate-600",
+      align === "left" && "text-left",
+      align === "right" && "text-right",
+      align === "center" && "text-center",
+      sticky && "sticky left-8 z-10 bg-white",
+    )}
+    title={title ?? "Clic para mayor/menor"}
+    onClick={onClick}
+  >
+    {children}
+    {active ? (dir > 0 ? " ▼" : " ▲") : ""}
+  </th>
+);
+
 export function InformeRankingTable({
   payload,
   metric,
@@ -95,6 +130,13 @@ export function InformeRankingTable({
     [dimension, limit, metric, pass, payload, sort],
   );
 
+  const toggleRankingSort = (col: InformeRankingSortCol) => {
+    onSortChange({
+      col,
+      dir: sort.col === col ? sort.dir * -1 : 1,
+    });
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -115,14 +157,6 @@ export function InformeRankingTable({
           onChange={(value) => onMetricChange(value as InformeMetric)}
         />
         <MiniToggle
-          value={sort}
-          options={[
-            { id: "cur", label: "Actual" },
-            { id: "mom", label: "Variación" },
-          ]}
-          onChange={(value) => onSortChange(value as InformeRankingSort)}
-        />
-        <MiniToggle
           value={String(limit)}
           options={INFORME_RANKING_LIMITS.map((item) => ({
             id: String(item),
@@ -134,22 +168,60 @@ export function InformeRankingTable({
       <p className="text-xs text-slate-500">
         Top {limit} por{" "}
         {INFORME_RANKING_DIMENSIONS.find((item) => item.id === dimension)?.label.toLowerCase()}{" "}
-        × sede. Categoría es el tipo comercial. Empresa (proveedor) sale del
-        maestro. Los filtros de estructura de arriba aplican a este ranking.
+        × sede. Clic en una columna para mayor/menor. Las sedes van en el orden
+        del portal, sin código al inicio. Categoría es el tipo comercial.
+        Empresa (proveedor) sale del maestro. Los filtros de estructura de
+        arriba aplican a este ranking.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead>
             <tr className="text-[11px] uppercase tracking-wide text-slate-500">
               <th className="sticky left-0 z-10 bg-white px-2 py-2 text-left">#</th>
-              <th className="sticky left-8 z-10 bg-white px-2 py-2 text-left">Nombre</th>
-              <th className="px-2 py-2 text-right">Actual</th>
-              <th className="px-2 py-2 text-right">Var. %</th>
-              <th className="px-2 py-2 text-right">Anterior</th>
-              {payload.sedes.map((sede) => (
-                <th key={sede.key} className="px-1 py-2 text-center font-semibold text-slate-600">
-                  {sede.s}
-                </th>
+              <SortableTh
+                sticky
+                align="left"
+                active={sort.col === "name"}
+                dir={sort.dir}
+                onClick={() => toggleRankingSort("name")}
+              >
+                Nombre
+              </SortableTh>
+              <SortableTh
+                align="right"
+                active={sort.col === "cur"}
+                dir={sort.dir}
+                onClick={() => toggleRankingSort("cur")}
+              >
+                Actual
+              </SortableTh>
+              <SortableTh
+                align="right"
+                active={sort.col === "var"}
+                dir={sort.dir}
+                onClick={() => toggleRankingSort("var")}
+              >
+                Var. %
+              </SortableTh>
+              <SortableTh
+                align="right"
+                active={sort.col === "prev"}
+                dir={sort.dir}
+                onClick={() => toggleRankingSort("prev")}
+              >
+                Anterior
+              </SortableTh>
+              {payload.sedes.map((sede, index) => (
+                <SortableTh
+                  key={sede.key}
+                  align="center"
+                  active={sort.col === index}
+                  dir={sort.dir}
+                  title={`${sede.e} — clic para mayor/menor`}
+                  onClick={() => toggleRankingSort(index)}
+                >
+                  {stripInformeSedeDisplayName(sede.s)}
+                </SortableTh>
               ))}
             </tr>
           </thead>
