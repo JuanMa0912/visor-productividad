@@ -33,6 +33,9 @@ export const mergeExpandCellInto = (
   }
   current.units += incoming.units;
   current.cost += incoming.cost;
+  // El transito se suma entre fuentes igual que los kilos, pero sigue viviendo
+  // en su propio campo: nunca se mezcla con lo recibido.
+  current.transito += incoming.transito;
   current.sales = Math.max(current.sales, incoming.sales);
   // El pvu es el precio de venta del item en la sede: NO se recalcula como
   // ventas/kilos_comprados, que mezclaba las dos magnitudes y ensuciaba el

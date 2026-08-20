@@ -51,6 +51,8 @@ export type PreciosProveedorCell = {
   /** Costo unitario de entrada (inventario). */
   pcu: number;
   margenPct: number;
+  /** Kilos EN TRANSITO (ET): despachados y sin recibir. Se informan, no se suman. */
+  transito: number;
 };
 
 export type PreciosProveedorExpandRow = {
