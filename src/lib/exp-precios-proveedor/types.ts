@@ -11,6 +11,8 @@ export type PreciosProveedorMeta = {
   empresas: Array<{ id: string; label: string }>;
   sedes: Array<{ key: string; label: string }>;
   proveedores: Array<{ id: string; label: string }>;
+  /** Marca comercial del PRODUCTO (POS criterios_itm_2), no del proveedor. */
+  marcas: Array<{ id: string; label: string }>;
   note: string;
 };
 

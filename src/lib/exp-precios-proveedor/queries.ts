@@ -376,6 +376,16 @@ export const queryPreciosProveedorMeta = async (
   client: PoolClient,
 ): Promise<PreciosProveedorMeta> => {
   const range = await resolveDefaultDateRange(client);
+  // Marcas del PRODUCTO. Salen del puente y no del maestro del POS, para que la
+  // lista solo ofrezca marcas realmente mapeadas a algun item.
+  const marcas = await client.query<{ id: string; label: string }>(`
+    SELECT BTRIM(marca) AS id, BTRIM(marca) AS label
+    FROM proveedor_item
+    WHERE NULLIF(BTRIM(COALESCE(marca, '')), '') IS NOT NULL
+    GROUP BY BTRIM(marca)
+    ORDER BY 1
+    LIMIT 4000
+  `);
   const lineas = await client.query<{ id: string; label: string }>(`
     SELECT id_linea1 AS id,
            COALESCE(NULLIF(MAX(nombre_linea1), ''), id_linea1) AS label
@@ -424,6 +434,10 @@ export const queryPreciosProveedorMeta = async (
       (id) => ({ id, label: empresaLabel(id) }),
     ),
     proveedores: await queryPreciosProveedorCatalogo(client),
+    marcas: marcas.rows.map((row) => ({
+      id: String(row.id ?? "").trim(),
+      label: String(row.label ?? "").trim(),
+    })),
     note:
       "Costo de entrada = inventario ET/EF del POS (cmmovimiento_inventario en 217). Si ese día no hay ET/EF, se usa el pedido FR/OC. En Mercatodo ET (tránsito) + EF. Precio venta no se toca. Doble clic: $/kg, kilos y margen vendido.",
   };
@@ -481,6 +495,8 @@ export type PreciosProveedorQueryInput = {
   /** @deprecated usar `sublineaIds`. */
   sublineaId?: string | null;
   proveedorIds?: string[] | null;
+  /** Marcas del producto a filtrar (etiqueta tal cual viene de proveedor_item). */
+  marcaIds?: string[] | null;
   /** @deprecated usar `proveedorIds`. */
   proveedorId?: string | null;
   itemIds?: string[] | null;
@@ -687,6 +703,20 @@ export const queryPreciosProveedorMatrix = async (
     }
   }
 
+  // Marca del PRODUCTO. Vive en el puente proveedor_item (POS criterios_itm_2).
+  // Se filtra con EXISTS para no alterar los joins ya existentes ni multiplicar
+  // filas: un item tiene una sola marca, pero el puente es por empresa.
+  let marcaSql = "";
+  const marcaIds = uniqueTrimmed([...(input.marcaIds ?? [])]);
+  if (marcaIds.length > 0) {
+    marcaSql = ` AND EXISTS (
+      SELECT 1 FROM proveedor_item pim
+      WHERE pim.empresa = r.empresa_norm
+        AND BTRIM(pim.id_item) = BTRIM(r.id_item)
+        AND ${sqlEqOrAny(params, "BTRIM(COALESCE(pim.marca, ''))", marcaIds)}
+    )`;
+  }
+
   const sedePairs = columns.map((col) => ({
     empresa: col.empresa,
     idCo: col.idCo.padStart(3, "0"),
@@ -815,6 +845,7 @@ export const queryPreciosProveedorMatrix = async (
         ${lineaSql}
         ${sublineaSql}
         ${proveedorSql}
+        ${marcaSql}
         ${sedeSql}
         ${searchSql}
       GROUP BY r.fecha_dcto, r.empresa_norm, r.id_co_norm, r.id_item
