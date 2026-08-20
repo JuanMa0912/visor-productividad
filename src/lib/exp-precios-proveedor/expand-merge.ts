@@ -3,8 +3,9 @@ import type { PreciosProveedorCell } from "@/lib/exp-precios-proveedor/types";
 const unitPrice = (money: number, units: number) =>
   units > 0 ? money / units : 0;
 
-const marginPct = (sales: number, cost: number) =>
-  sales > 0 ? ((sales - cost) / sales) * 100 : 0;
+/** Margen al que saldria vendido: precio de venta/kg contra costo de entrada/kg. */
+const projectedMarginPct = (pvu: number, pcu: number) =>
+  pvu > 0 && pcu > 0 ? ((pvu - pcu) / pvu) * 100 : 0;
 
 export const mergeProveedorNits = (
   a: string | null | undefined,
@@ -33,10 +34,11 @@ export const mergeExpandCellInto = (
   current.units += incoming.units;
   current.cost += incoming.cost;
   current.sales = Math.max(current.sales, incoming.sales);
-  current.pvu = unitPrice(current.sales, current.units);
+  // El pvu es el precio de venta del item en la sede: NO se recalcula como
+  // ventas/kilos_comprados, que mezclaba las dos magnitudes y ensuciaba el
+  // margen. Se conserva el que ya venia resuelto.
+  current.pvu = current.pvu > 0 ? current.pvu : incoming.pvu;
+  // El pcu si es un promedio ponderado legitimo: ambos lados son de compra.
   current.pcu = unitPrice(current.cost, current.units);
-  current.margenPct = marginPct(
-    current.sales > 0 ? current.sales : current.pvu * current.units,
-    current.cost,
-  );
+  current.margenPct = projectedMarginPct(current.pvu, current.pcu);
 };
