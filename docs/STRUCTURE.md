@@ -77,6 +77,7 @@ Codigo compartido sin UI de pagina.
 | `messages.ts` | catalogo de mensajes UI |
 | `path-labels.ts` | etiquetas legibles para rutas en presencia/accesos |
 | `item-drilldown-links.ts` | links entre modulos manteniendo filtros |
+| `uaid-brand.ts` | versión e identidad visual UAID 5.0 (login primero; shell después) |
 | `portal-permissions.test.ts` | tests de permisos seccion/subtablero/rotacion |
 
 ### Dominios

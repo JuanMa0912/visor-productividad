@@ -13,6 +13,7 @@ import {
 import { useAuth } from "@/lib/auth/auth-context";
 import { LOGIN_IDLE_QUERY } from "@/lib/auth/session-idle";
 import type { AuthUser } from "@/lib/auth/types";
+import { PORTAL_APP_VERSION_LABEL } from "@/lib/shared/uaid-brand";
 
 const sanitizeFrom = (raw: string | null): string => {
   // `/` es productividad por linea; tras login el hub del portal es `/secciones`.
@@ -104,9 +105,16 @@ export function LoginPageInner() {
             </div>
           </div>
 
+          <p className="mb-3 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-800">
+            {PORTAL_APP_VERSION_LABEL}
+          </p>
           <h2 className="text-3xl font-bold text-slate-900">Bienvenido</h2>
           <p className="mt-2 text-sm text-slate-600">
             Ingresa tus credenciales para acceder al portal.
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            Esta es la entrada de UAID 5.0. El resto de pantallas se irá
+            renovando en las próximas actualizaciones.
           </p>
           {searchParams.get("razon") === LOGIN_IDLE_QUERY ? (
             <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
