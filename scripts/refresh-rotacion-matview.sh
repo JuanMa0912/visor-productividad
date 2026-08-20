@@ -178,3 +178,14 @@ fi
 
 refresh_periodo_fn "refresh_rotacion_item_periodo_std"
 refresh_periodo_fn "refresh_rotacion_dinastia_item_periodo_std"
+
+gestion_fn_exists=$("${PSQL[@]}" -c "SELECT 1 FROM pg_proc WHERE proname = 'refresh_rotacion_gestion_semana_roll' LIMIT 1;" | tr -d '[:space:]')
+if [[ -n "$gestion_fn_exists" && "$legacy_exists" -eq 1 ]]; then
+  start_ts=$(date +%s)
+  log "Iniciando refresh_rotacion_gestion_semana_roll()"
+  gestion_line=$(run_psql_maintenance "SELECT out_weeks, out_row_count, out_elapsed_ms FROM refresh_rotacion_gestion_semana_roll();" | head -n 1)
+  elapsed=$(( $(date +%s) - start_ts ))
+  log "Gestion semanal: ${gestion_line} (${elapsed}s)"
+else
+  log "refresh_rotacion_gestion_semana_roll no aplica (falta funcion o matview legacy)."
+fi

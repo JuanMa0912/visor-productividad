@@ -3,6 +3,7 @@ import {
 } from "@/lib/shared/constants";
 import {
   bestLineaDisplayFromRow,
+  formatCompanyLabel,
   normalizeLineaN1CodeForFilter,
   normalizeLineaN2CodeForFilter,
   type RotationRow,
@@ -104,26 +105,46 @@ const groupIdentity = (
   };
 };
 
+export type RotacionChartFilterOptions = {
+  sedeKeys?: readonly string[];
+  lineaKeys?: readonly string[];
+  sublineaKeys?: readonly string[];
+  itemKeys?: readonly string[];
+  buckets?: readonly RotacionCriticalBucket[];
+};
+
+const toKeySet = (keys: readonly string[] | undefined) =>
+  keys && keys.length > 0 ? new Set(keys) : null;
+
 export const filterTaggedRowsForChart = (
   tagged: readonly RotacionCriticalTaggedRow[],
   families: readonly RotacionCriticalDigestFamily[],
   focusTrail: readonly RotacionChartFocus[],
-  options?: {
-    itemKeys?: readonly string[];
-    buckets?: readonly RotacionCriticalBucket[];
-  },
+  options?: RotacionChartFilterOptions,
 ): RotacionCriticalTaggedRow[] => {
   const familySet = new Set(families);
-  const itemSet =
-    options?.itemKeys && options.itemKeys.length > 0
-      ? new Set(options.itemKeys)
-      : null;
+  const sedeSet = toKeySet(options?.sedeKeys);
+  const lineaSet = toKeySet(options?.lineaKeys);
+  const sublineaSet = toKeySet(options?.sublineaKeys);
+  const itemSet = toKeySet(options?.itemKeys);
   const bucketSet =
     options?.buckets && options.buckets.length > 0 && options.buckets.length < 3
       ? new Set(options.buckets)
       : null;
   return tagged.filter((entry) => {
     if (!familySet.has(entry.family)) return false;
+    if (sedeSet && !sedeSet.has(groupIdentity(entry.row, "sede").key)) {
+      return false;
+    }
+    if (lineaSet && !lineaSet.has(groupIdentity(entry.row, "linea").key)) {
+      return false;
+    }
+    if (
+      sublineaSet &&
+      !sublineaSet.has(groupIdentity(entry.row, "sublinea").key)
+    ) {
+      return false;
+    }
     if (itemSet && !itemSet.has(entry.row.item)) return false;
     if (bucketSet && !bucketSet.has(entry.bucket)) return false;
     for (const focus of focusTrail) {
@@ -135,18 +156,49 @@ export const filterTaggedRowsForChart = (
   });
 };
 
+const groupOptionLabel = (
+  row: RotationRow,
+  groupBy: RotacionChartGroupBy,
+  identity: { key: string; label: string },
+) => {
+  if (groupBy !== "sede") return identity.label;
+  const company = formatCompanyLabel(row.empresa);
+  if (!company) return identity.label;
+  if (identity.label.startsWith(`${company} - `)) return identity.label;
+  return `${company} - ${identity.label}`;
+};
+
+export const buildRotacionChartGroupOptions = (
+  tagged: readonly RotacionCriticalTaggedRow[],
+  groupBy: RotacionChartGroupBy,
+): Array<{ value: string; label: string }> => {
+  const options = new Map<string, { label: string; sortLabel: string }>();
+  for (const entry of tagged) {
+    const identity = groupIdentity(entry.row, groupBy);
+    if (!options.has(identity.key)) {
+      options.set(identity.key, {
+        label: groupOptionLabel(entry.row, groupBy, identity),
+        sortLabel: identity.label,
+      });
+    }
+  }
+  return [...options.entries()]
+    .sort((a, b) => {
+      if (groupBy === "sede") {
+        const order =
+          getSedeOrderIndexForRawName(a[1].sortLabel) -
+          getSedeOrderIndexForRawName(b[1].sortLabel);
+        if (order !== 0) return order;
+      }
+      return a[1].label.localeCompare(b[1].label, "es");
+    })
+    .map(([value, option]) => ({ value, label: option.label }));
+};
+
 export const buildRotacionChartItemOptions = (
   tagged: readonly RotacionCriticalTaggedRow[],
-): Array<{ value: string; label: string }> => {
-  const labels = new Map<string, string>();
-  for (const entry of tagged) {
-    const { key, label } = groupIdentity(entry.row, "item");
-    if (!labels.has(key)) labels.set(key, label);
-  }
-  return [...labels.entries()]
-    .sort((a, b) => a[1].localeCompare(b[1], "es"))
-    .map(([value, label]) => ({ value, label }));
-};
+): Array<{ value: string; label: string }> =>
+  buildRotacionChartGroupOptions(tagged, "item");
 
 const compareStackRows = (
   a: RotacionChartStackRow,

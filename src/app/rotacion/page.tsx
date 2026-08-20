@@ -257,6 +257,7 @@ export function RotacionPageInner() {
   );
   const graficoRowsFetchKeyRef = useRef<string | null>(null);
   const graficoLoadGenerationRef = useRef(0);
+  const graficoInFlightScopeRef = useRef<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSavingAbcdConfig, setIsSavingAbcdConfig] = useState(false);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
@@ -1126,17 +1127,18 @@ export function RotacionPageInner() {
       categoriaKeys: [],
     });
     if (graficoRowsFetchKeyRef.current === rowsScopeKey) return true;
+    if (graficoInFlightScopeRef.current === rowsScopeKey) return true;
 
     const generation = ++graficoLoadGenerationRef.current;
+    graficoInFlightScopeRef.current = rowsScopeKey;
+    setIsLoadingGrafico(true);
+    setGraficoError(null);
     const rowsCacheKey = buildRotacionRowsCacheKey(
       apiBasePath,
       authUser?.id,
       rowsScopeKey,
     );
     const isStale = () => generation !== graficoLoadGenerationRef.current;
-
-    setIsLoadingGrafico(true);
-    setGraficoError(null);
 
     const applyGraficoRows = (result: RotacionRowsFetchResult) => {
       if (isStale()) return;
@@ -1146,6 +1148,7 @@ export function RotacionPageInner() {
         end: dateRange.end,
       });
       graficoRowsFetchKeyRef.current = rowsScopeKey;
+      setGraficoError(null);
     };
 
     try {
@@ -1185,6 +1188,9 @@ export function RotacionPageInner() {
       );
       return false;
     } finally {
+      if (graficoInFlightScopeRef.current === rowsScopeKey) {
+        graficoInFlightScopeRef.current = null;
+      }
       if (!isStale()) setIsLoadingGrafico(false);
     }
   }, [
@@ -1197,10 +1203,9 @@ export function RotacionPageInner() {
   ]);
 
   useEffect(() => {
-    if (boardView !== "grafico") return;
     if (!ready || isLoadingLineCatalog) return;
     void loadGraficoRows();
-  }, [boardView, isLoadingLineCatalog, loadGraficoRows, ready]);
+  }, [isLoadingLineCatalog, loadGraficoRows, ready]);
 
   const sedeOptions = useMemo(() => {
     const scopedOptions =
@@ -3139,7 +3144,8 @@ export function RotacionPageInner() {
           {boardView === "grafico" ? (
             <p className="text-xs text-slate-500">
               Carga propia: D+0+S de Mercamio / Mercatodo / Merkmios, sin
-              Dinastia. No usa las sedes ni las lineas de la tabla.
+              Dinastia. Empieza en segundo plano para que el tab salga de
+              una si el cache ya esta caliente.
               {dateRange.start && dateRange.end
                 ? ` Rango: ${formatRangeLabel(dateRange)}.`
                 : null}
@@ -3735,8 +3741,8 @@ export function RotacionPageInner() {
               dateRange={graficoLoadedRange ?? dateRange}
               abcdConfig={abcdConfig}
               loading={
-                isLoadingGrafico ||
-                (isLoadingLineCatalog && graficoRows.length === 0)
+                graficoRows.length === 0 &&
+                (isLoadingGrafico || isLoadingLineCatalog)
               }
             />
           )

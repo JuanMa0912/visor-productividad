@@ -108,6 +108,7 @@ Orden completo despues de `schema-auth.sql`:
 55. `20260813_orden_compra.sql` (snapshot cabecera OC: POS `cmmovimiento_ocompra` -> `orden_compra`)
 56. `20260818_orden_compra_linea.sql` (lineas OC: item + tercero real desde el mismo POS)
 57. `20260820_margen_item_mes_roll.sql` (agregado mensual para `/informe-variacion` YTD; se refresca al final de `margen:refresh-roll` y `refresh-variacion-roll.sh`)
+58. `20260820_rotacion_gestion_semana_roll.sql` (tendencia semanal D/0/S aproximada para `/rotacion` Grafico; `SELECT * FROM refresh_rotacion_gestion_semana_roll();`, tambien al final de `refresh-rotacion-matview.sh`)
 
 Tras `20260708_rotacion_clean_matview_n2_stable` (y/o `20260723_rotacion_dinastia_matview`), refrescar matview y snapshot **via psql** (no pegar el SQL directo en bash):
 
@@ -131,6 +132,14 @@ SQL
 '
 ```
 
+Panel de gestion (tendencia semanal). Aplicar una vez y poblar el roll:
+
+```bash
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260820_rotacion_gestion_semana_roll.sql
+sudo -u visor /bin/bash /opt/visor-productividad/scripts/refresh-rotacion-matview.sh --periodo-only
+```
+
+`--periodo-only` igual corre `refresh_rotacion_gestion_semana_roll()` al final. La primera carga de 26 semanas puede tardar; las noches siguientes reescriben las semanas recientes.
 
 ### 4.1 Auth, sesiones y administracion
 
@@ -363,6 +372,7 @@ porcentajes.
 | `rotacion_cero_item_estado` | migraciones | estado operativo cero/restock |
 | `rotacion_cero_item_estado_audit` | migraciones | historial de cambios |
 | `rotacion_restock_surtido_foto` | migraciones | foto JPEG/PNG/WebP en base64 de items restock ya surtidos |
+| `rotacion_gestion_semana_roll` | refresh nocturno | tendencia semanal (ventana 30d) de D/0/S aproximado para el panel de gestion; `demandaD` = DI≥45 (no es ABCD D) |
 
 DIC (dias de inventario) = `inventory_units * tracked_days / demanda_units`, con
 `demanda_units = total_units + uds_equivalentes` y `uds_equivalentes` = salidas

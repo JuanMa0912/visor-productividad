@@ -18,11 +18,13 @@ import {
   LINEA_N1_FAMILY_LABELS,
 } from "@/app/rotacion/rotacion-preamble";
 import { DiMultiSelect } from "@/app/analisis-de-inventario/di-multi-select";
+import { RotacionGestionPanel } from "./rotacion-gestion-panel";
 import {
   tagRotacionCriticalRows,
   type RotacionCriticalDigestFamily,
 } from "@/lib/rotacion/critical-digest";
 import {
+  buildRotacionChartGroupOptions,
   buildRotacionChartItemOptions,
   buildRotacionChartStacks,
   filterTaggedRowsForChart,
@@ -35,6 +37,8 @@ import {
   type RotacionChartMetric,
   type RotacionChartSlicePresetId,
 } from "@/lib/rotacion/chart-series";
+
+const EMPTY_KEYS: string[] = [];
 
 const GROUP_OPTIONS: Array<{ id: RotacionChartGroupBy; label: string }> = [
   { id: "sede", label: "Sedes" },
@@ -117,6 +121,11 @@ export function RotacionGraficoBoard({
   >("manufactura");
   const [focusTrail, setFocusTrail] = useState<RotacionChartFocus[]>([]);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [selectedSedeKeys, setSelectedSedeKeys] = useState<string[]>([]);
+  const [selectedLineaKeys, setSelectedLineaKeys] = useState<string[]>([]);
+  const [selectedSublineaKeys, setSelectedSublineaKeys] = useState<string[]>(
+    [],
+  );
   const [slicePreset, setSlicePreset] =
     useState<RotacionChartSlicePresetId>("todos");
 
@@ -133,27 +142,104 @@ export function RotacionGraficoBoard({
   );
 
   const tagged = useMemo(
-    () => tagRotacionCriticalRows(rows, dateRange, abcdConfig, families),
-    [abcdConfig, dateRange, families, rows],
+    () =>
+      tagRotacionCriticalRows(rows, dateRange, abcdConfig, [
+        "manufactura",
+        "perecederos",
+      ]),
+    [abcdConfig, dateRange, rows],
   );
 
-  const scopedBeforeItems = useMemo(
+  const showLineaFilter =
+    groupBy === "linea" || groupBy === "sublinea" || groupBy === "item";
+  const showSublineaFilter = groupBy === "sublinea" || groupBy === "item";
+
+  const afterFocus = useMemo(
     () => filterTaggedRowsForChart(tagged, families, focusTrail),
     [families, focusTrail, tagged],
   );
 
+  const sedeOptions = useMemo(
+    () => buildRotacionChartGroupOptions(afterFocus, "sede"),
+    [afterFocus],
+  );
+
+  const afterSedes = useMemo(
+    () =>
+      filterTaggedRowsForChart(tagged, families, focusTrail, {
+        sedeKeys: selectedSedeKeys,
+      }),
+    [families, focusTrail, selectedSedeKeys, tagged],
+  );
+
+  const lineaOptions = useMemo(
+    () => buildRotacionChartGroupOptions(afterSedes, "linea"),
+    [afterSedes],
+  );
+
+  const afterLineas = useMemo(
+    () =>
+      filterTaggedRowsForChart(tagged, families, focusTrail, {
+        sedeKeys: selectedSedeKeys,
+        lineaKeys: showLineaFilter ? selectedLineaKeys : [],
+      }),
+    [
+      families,
+      focusTrail,
+      selectedLineaKeys,
+      selectedSedeKeys,
+      showLineaFilter,
+      tagged,
+    ],
+  );
+
+  const sublineaOptions = useMemo(
+    () => buildRotacionChartGroupOptions(afterLineas, "sublinea"),
+    [afterLineas],
+  );
+
   const itemOptions = useMemo(
-    () => buildRotacionChartItemOptions(scopedBeforeItems),
-    [scopedBeforeItems],
+    () =>
+      buildRotacionChartItemOptions(
+        filterTaggedRowsForChart(tagged, families, focusTrail, {
+          sedeKeys: selectedSedeKeys,
+          lineaKeys: showLineaFilter ? selectedLineaKeys : [],
+          sublineaKeys: showSublineaFilter ? selectedSublineaKeys : [],
+        }),
+      ),
+    [
+      families,
+      focusTrail,
+      selectedLineaKeys,
+      selectedSedeKeys,
+      selectedSublineaKeys,
+      showLineaFilter,
+      showSublineaFilter,
+      tagged,
+    ],
   );
 
   const scoped = useMemo(
     () =>
       filterTaggedRowsForChart(tagged, families, focusTrail, {
+        sedeKeys: selectedSedeKeys,
+        lineaKeys: showLineaFilter ? selectedLineaKeys : [],
+        sublineaKeys: showSublineaFilter ? selectedSublineaKeys : [],
         itemKeys: selectedItems,
         buckets: sliceBuckets,
       }),
-    [families, focusTrail, selectedItems, sliceBuckets, tagged],
+    [
+      families,
+      focusTrail,
+      selectedItems,
+      selectedLineaKeys,
+      selectedSedeKeys,
+      selectedSublineaKeys,
+      showLineaFilter,
+      showSublineaFilter,
+      sliceBuckets,
+      tagged,
+    ],
   );
 
   const visibleBuckets = useMemo(
@@ -178,12 +264,25 @@ export function RotacionGraficoBoard({
   const totals = useMemo(() => sumRotacionChartStacks(stacks), [stacks]);
   const nextGroup = nextChartGroupBy(groupBy);
 
+  const gestionSedeScopes = useMemo(() => {
+    const keys = new Set<string>();
+    for (const row of rows) {
+      keys.add(`${row.empresa}::${row.sedeId}`);
+    }
+    const all = [...keys];
+    if (selectedSedeKeys.length === 0) return all;
+    return all.filter((key) => selectedSedeKeys.includes(key));
+  }, [rows, selectedSedeKeys]);
+
   const resetDefault = () => {
     setGroupBy("sede");
     setMetric("items");
     setFamilyMode("manufactura");
     setFocusTrail([]);
     setSelectedItems([]);
+    setSelectedSedeKeys([]);
+    setSelectedLineaKeys([]);
+    setSelectedSublineaKeys([]);
     setSlicePreset("todos");
   };
 
@@ -211,6 +310,7 @@ export function RotacionGraficoBoard({
   };
 
   return (
+    <div className="space-y-4">
     <Card className="border-slate-200/80 bg-white shadow-[0_22px_45px_-40px_rgba(15,23,42,0.55)]">
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -219,10 +319,9 @@ export function RotacionGraficoBoard({
               Grafico D + 0 + S
             </CardTitle>
             <CardDescription>
-              Misma lectura del correo diario: criticos de manufactura por sede.
-              Elige cortes (D, cero, restock; uno, dos o todos), busca y marca
-              items, o agrupa por sede / linea / sublinea / item. Esta vista
-              carga sus propias sedes y no usa los filtros de la tabla.
+              Elige cortes, sedes, y al agrupar por linea o sublinea marca
+              cuales quieres ver. Clic en una barra para bajar de nivel. Esta
+              vista carga sus propias sedes y no usa los filtros de la tabla.
             </CardDescription>
           </div>
           <Button
@@ -295,6 +394,40 @@ export function RotacionGraficoBoard({
               }}
             />
           </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <DiMultiSelect
+            label="Sedes"
+            values={selectedSedeKeys}
+            options={sedeOptions}
+            emptyLabel="Todas"
+            searchable
+            searchPlaceholder="Buscar sede..."
+            onChange={setSelectedSedeKeys}
+          />
+          {showLineaFilter ? (
+            <DiMultiSelect
+              label="Lineas"
+              values={selectedLineaKeys}
+              options={lineaOptions}
+              emptyLabel="Todas"
+              searchable
+              searchPlaceholder="Buscar linea..."
+              onChange={setSelectedLineaKeys}
+            />
+          ) : null}
+          {showSublineaFilter ? (
+            <DiMultiSelect
+              label="Sublineas"
+              values={selectedSublineaKeys}
+              options={sublineaOptions}
+              emptyLabel="Todas"
+              searchable
+              searchPlaceholder="Buscar sublinea..."
+              onChange={setSelectedSublineaKeys}
+            />
+          ) : null}
         </div>
 
         {focusTrail.length > 0 ? (
@@ -476,5 +609,16 @@ export function RotacionGraficoBoard({
         ) : null}
       </CardContent>
     </Card>
+    <RotacionGestionPanel
+      tagged={scoped}
+      dateRange={dateRange}
+      families={families}
+      buckets={sliceBuckets}
+      sedeScopes={gestionSedeScopes}
+      lineaKeys={showLineaFilter ? selectedLineaKeys : EMPTY_KEYS}
+      sublineaKeys={showSublineaFilter ? selectedSublineaKeys : EMPTY_KEYS}
+      loading={loading}
+    />
+    </div>
   );
 }

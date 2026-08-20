@@ -233,4 +233,62 @@ describe("tagRotacionCriticalRows + chart stacks", () => {
     assert.equal(onlyRestock.length, 1);
     assert.equal(onlyRestock[0]?.bucket, "restock");
   });
+
+  it("filtra por sede, linea y sublinea elegidas", () => {
+    const tagged = tagRotacionCriticalRows(
+      [
+        baseRow({
+          item: "cero-1",
+          totalSales: 0,
+          totalUnits: 0,
+          salesEffectiveDays: 0,
+          inventoryUnits: 3,
+          inventoryValue: 300,
+          openingInventoryUnits: 5,
+          rotation: 999999,
+          lastPurchaseDate: null,
+          lastMovementDate: "2026-04-01",
+        }),
+        baseRow({
+          sedeId: "002",
+          sedeName: "Floralia",
+          item: "cero-2",
+          lineaN1Codigo: "11",
+          linea: "11",
+          lineaN2Codigo: "02",
+          sublinea: "Gaseosas",
+          totalSales: 0,
+          totalUnits: 0,
+          salesEffectiveDays: 0,
+          inventoryUnits: 4,
+          inventoryValue: 400,
+          openingInventoryUnits: 6,
+          rotation: 999999,
+          lastPurchaseDate: null,
+          lastMovementDate: "2026-04-01",
+        }),
+      ],
+      dateRange,
+      DEFAULT_ABCD_CONFIG,
+      ["manufactura"],
+    );
+
+    const onlyFloresta = filterTaggedRowsForChart(tagged, ["manufactura"], [], {
+      sedeKeys: ["mtodo::001"],
+    });
+    assert.equal(onlyFloresta.length, 1);
+    assert.equal(onlyFloresta[0]?.row.sedeId, "001");
+
+    const onlyLinea11 = filterTaggedRowsForChart(tagged, ["manufactura"], [], {
+      lineaKeys: ["11"],
+    });
+    assert.equal(onlyLinea11.length, 1);
+    assert.equal(onlyLinea11[0]?.row.item, "cero-2");
+
+    const onlyGaseosas = filterTaggedRowsForChart(tagged, ["manufactura"], [], {
+      sublineaKeys: ["11|0002"],
+    });
+    assert.equal(onlyGaseosas.length, 1);
+    assert.equal(onlyGaseosas[0]?.row.sublinea, "Gaseosas");
+  });
 });
