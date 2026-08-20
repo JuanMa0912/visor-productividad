@@ -282,6 +282,20 @@ async function queryOrdenCompraLineaProveedores(
 const isoToCompact = (iso: string) => iso.replace(/-/g, "");
 
 /** YYYYMMDD local, para mirar OC de dias previos al dia del tablero. */
+/** Dias entre dos fechas compactas YYYYMMDD. Devuelve 0 si alguna no es valida. */
+const compactDayDiff = (desde: string, hasta: string) => {
+  const a = String(desde ?? "").trim();
+  const b = String(hasta ?? "").trim();
+  if (!/^d{8}$/.test(a) || !/^d{8}$/.test(b)) return 0;
+  const toDate = (raw: string) =>
+    new Date(
+      Number(raw.slice(0, 4)),
+      Number(raw.slice(4, 6)) - 1,
+      Number(raw.slice(6, 8)),
+    ).getTime();
+  return Math.round((toDate(b) - toDate(a)) / 86_400_000);
+};
+
 const compactShiftDays = (compact: string, days: number) => {
   const raw = String(compact ?? "").trim();
   if (!/^\d{8}$/.test(raw)) return raw;
@@ -863,8 +877,11 @@ export const queryPreciosProveedorMatrix = async (
         SUM(cantidad) AS cantidad,
         SUM(ventas_netas) AS ventas_netas,
         SUM(costo_total) AS costo_total,
-        AVG(pvu_day) AS pvu,
-        AVG(pcu_day) AS pcu,
+        -- PONDERADO por kilos, no promedio simple de los dias. Un dia con 5 kg
+        -- pesaba lo mismo que uno con 5.000, asi que en rangos largos el precio
+        -- se inventaba: ahora es plata sobre kilos, que es el precio real.
+        CASE WHEN SUM(cantidad) > 0 THEN SUM(ventas_netas) / SUM(cantidad) END AS pvu,
+        CASE WHEN SUM(cantidad) > 0 THEN SUM(costo_total) / SUM(cantidad) END AS pcu,
         COUNT(*) FILTER (WHERE pvu_day IS NOT NULL OR pcu_day IS NOT NULL) AS dias
       FROM daily
       GROUP BY empresa_norm, id_co_norm, id_item
@@ -915,9 +932,7 @@ export const queryPreciosProveedorMatrix = async (
   const rowMap = new Map<
     string,
     PreciosProveedorRow & {
-      pvuSum: number;
-      pcuSum: number;
-      priceDays: number;
+      costoVenta: number;
       proveedores: Map<string, string>;
     }
   >();
@@ -933,6 +948,9 @@ export const queryPreciosProveedorMatrix = async (
     const pvu = toNum(row.pvu);
     const itemId = String(row.id_item).trim();
     const pcu = costoEntrada.get(`${itemId}::${key}`) ?? 0;
+    // Costo contable de lo vendido (COGS). Se calculaba en el CTE agg y se
+    // descartaba en el mapeo; es lo que permite el margen vendido sin inventarlo.
+    const costoVenta = toNum(row.costo_total);
     const cost = units > 0 && pcu > 0 ? units * pcu : 0;
 
     cells.push({
@@ -942,6 +960,7 @@ export const queryPreciosProveedorMatrix = async (
       units,
       sales,
       cost,
+      costoVenta,
       pvu,
       pcu,
       margenPct: marginPct(sales > 0 ? sales : pvu * units, cost),
@@ -956,12 +975,8 @@ export const queryPreciosProveedorMatrix = async (
       existing.units += units;
       existing.sales += sales;
       existing.cost += cost;
+      existing.costoVenta += costoVenta;
       existing.proveedores.set(provId, provLabel);
-      if (pvu > 0 || pcu > 0) {
-        existing.pvuSum += pvu;
-        existing.pcuSum += pcu;
-        existing.priceDays += 1;
-      }
     } else {
       rowMap.set(itemId, {
         id: itemId,
@@ -976,12 +991,10 @@ export const queryPreciosProveedorMatrix = async (
         units,
         sales,
         cost,
+        costoVenta,
         pvu: 0,
         pcu: 0,
         margenPct: 0,
-        pvuSum: pvu > 0 || pcu > 0 ? pvu : 0,
-        pcuSum: pvu > 0 || pcu > 0 ? pcu : 0,
-        priceDays: pvu > 0 || pcu > 0 ? 1 : 0,
         proveedores: new Map([[provId, provLabel]]),
       });
     }
@@ -989,12 +1002,10 @@ export const queryPreciosProveedorMatrix = async (
 
   const rows = [...rowMap.values()]
     .map((row) => {
-      const pvu =
-        row.priceDays > 0
-          ? row.pvuSum / row.priceDays
-          : unitPrice(row.sales, row.units);
-      const pcu =
-        row.priceDays > 0 ? row.pcuSum / row.priceDays : unitPrice(row.cost, row.units);
+      // Ponderado por kilos entre sedes. Antes promediaba las sedes a peso
+      // igual: una sede que movio 5 kg valia lo mismo que una de 5.000.
+      const pvu = unitPrice(row.sales, row.units);
+      const pcu = unitPrice(row.cost, row.units);
       const proveedorCount = row.proveedores.size;
       const proveedorLabel =
         proveedorCount > 1
@@ -1013,6 +1024,7 @@ export const queryPreciosProveedorMatrix = async (
         units: row.units,
         sales: row.sales,
         cost: row.cost,
+        costoVenta: row.costoVenta,
         pvu,
         pcu,
         margenPct: marginPct(row.sales, row.cost),
@@ -1517,6 +1529,7 @@ export async function queryPreciosProveedorItemExpand(
         units,
         sales,
         cost,
+        costoVenta: 0,
         pvu,
         pcu: cellPcu,
         margenPct: projectedMarginPct(pvu, cellPcu),
@@ -1589,6 +1602,7 @@ export async function queryPreciosProveedorItemExpand(
         units: 0,
         sales: 0,
         cost: 0,
+        costoVenta: 0,
         pvu: 0,
         pcu: costo,
         margenPct: 0,
@@ -1606,3 +1620,121 @@ export async function queryPreciosProveedorItemExpand(
 
   return { itemId, label, rows };
 };
+
+/**
+ * Totales del periodo ANTERIOR, para los deltas de la cabecera.
+ *
+ * Va en una consulta aparte y acotada a los items que ya trajo la matriz: asi la
+ * comparacion es manzana con manzana (mismo conjunto de items) y no vuelve a
+ * pagar el barrido completo del rollup, que es la parte cara del tablero. Se
+ * pide en paralelo desde el cliente para no frenar la vista principal.
+ */
+export async function queryPreciosProveedorPrev(
+  client: PoolClient,
+  input: {
+    fromIso: string;
+    toIso: string;
+    itemIds: string[];
+    sedeKeys?: string[] | null;
+  },
+): Promise<{
+  from: string;
+  to: string;
+  kilos: number;
+  venta: number;
+  costoVenta: number;
+  costoEntrada: number;
+} | null> {
+  const itemIds = uniqueTrimmed(input.itemIds);
+  if (itemIds.length === 0) return null;
+
+  const allColumns = prototypeSedeColumns();
+  const requested = (input.sedeKeys ?? []).map((k) => k.trim()).filter(Boolean);
+  const columns =
+    requested.length > 0
+      ? allColumns.filter((col) => requested.includes(col.key))
+      : allColumns;
+  if (columns.length === 0) return null;
+
+  // Periodo inmediatamente anterior, del mismo largo.
+  const fromCompact = isoToCompact(input.fromIso);
+  const toCompact = isoToCompact(input.toIso);
+  const largo = compactDayDiff(fromCompact, toCompact) + 1;
+  if (!(largo > 0)) return null;
+  const prevToCompact = compactShiftDays(fromCompact, -1);
+  const prevFromCompact = compactShiftDays(prevToCompact, -(largo - 1));
+
+  const params: unknown[] = [prevFromCompact, prevToCompact, itemIds];
+  const tupleSql = columns
+    .map((col) => {
+      params.push(col.empresa.trim().toLowerCase(), col.idCo.padStart(3, "0"));
+      return `($${params.length - 1}, $${params.length})`;
+    })
+    .join(", ");
+
+  const res = await client.query<{
+    empresa: string;
+    id_co: string;
+    id_item: string;
+    kilos: string | number;
+    venta: string | number;
+    costo_venta: string | number;
+  }>(
+    `
+    SELECT
+      LOWER(BTRIM(r.empresa_norm)) AS empresa,
+      LPAD(BTRIM(r.id_co_norm), 3, '0') AS id_co,
+      BTRIM(r.id_item) AS id_item,
+      SUM(COALESCE(r.cantidad, 0)) AS kilos,
+      SUM(COALESCE(r.ventas_netas, 0)) AS venta,
+      SUM(COALESCE(r.costo_total, 0)) AS costo_venta
+    FROM margen_item_dia_roll r
+    WHERE r.fecha_dcto >= $1
+      AND r.fecha_dcto <= $2
+      AND TRIM(COALESCE(r.id_tipo, '')) = '4'
+      AND BTRIM(r.id_item) = ANY($3::text[])
+      AND (LOWER(BTRIM(r.empresa_norm)), LPAD(BTRIM(r.id_co_norm), 3, '0')) IN (${tupleSql})
+    GROUP BY 1, 2, 3
+    `,
+    params,
+  );
+
+  const prevFromIso = compactToIso(prevFromCompact) ?? input.fromIso;
+  const prevToIso = compactToIso(prevToCompact) ?? input.toIso;
+
+  const costoMap = await queryCostoEntradaMap(client, {
+    fromIso: prevFromIso,
+    toIso: prevToIso,
+    itemIds,
+    columns,
+  });
+
+  let kilos = 0;
+  let venta = 0;
+  let costoVenta = 0;
+  let costoEntradaValor = 0;
+  let costoEntradaKilos = 0;
+
+  for (const row of res.rows) {
+    const u = toNum(row.kilos);
+    kilos += u;
+    venta += toNum(row.venta);
+    costoVenta += toNum(row.costo_venta);
+    const sedeKey = `${String(row.empresa).trim()}|${String(row.id_co).trim()}`;
+    const pcu = costoMap.get(`${String(row.id_item).trim()}::${sedeKey}`) ?? 0;
+    // Mismo criterio que en la cabecera: ponderado por kilos, nunca promedio simple.
+    if (u > 0 && pcu > 0) {
+      costoEntradaValor += u * pcu;
+      costoEntradaKilos += u;
+    }
+  }
+
+  return {
+    from: prevFromIso,
+    to: prevToIso,
+    kilos,
+    venta,
+    costoVenta,
+    costoEntrada: costoEntradaKilos > 0 ? costoEntradaValor / costoEntradaKilos : 0,
+  };
+}
