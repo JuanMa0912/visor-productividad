@@ -15,7 +15,7 @@ export const SelectField = ({
   invalid = false,
   helperText,
 }: {
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
   options: SelectOption[];
@@ -83,7 +83,7 @@ export const MultiSelectField = ({
   clearLabel,
   allSelected = false,
 }: {
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   values: string[];
   options: SelectOption[];

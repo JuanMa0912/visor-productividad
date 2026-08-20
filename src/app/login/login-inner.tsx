@@ -87,7 +87,7 @@ export function LoginPageInner() {
     <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[1.1fr_1fr]">
       <AuthBrandingPanel className="min-h-[280px] lg:min-h-screen" />
 
-      <main className="flex items-center justify-center bg-slate-50 px-6 py-12 lg:px-12">
+      <main className="relative flex items-center justify-center bg-[#f4f6f8] px-6 py-12 lg:px-12 lg:shadow-[-40px_0_80px_-36px_rgba(2,6,23,0.5)]">
         <div className="w-full max-w-md">
           <div className="mb-8 grid grid-cols-2 gap-x-4 gap-y-4 border-b border-slate-200 pb-6">
             {/* MercaMio primero. Mismo ancho en las 4 celdas. */}

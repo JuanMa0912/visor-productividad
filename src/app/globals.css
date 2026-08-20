@@ -245,3 +245,30 @@ input.vp-sync-autofill:-webkit-autofill {
   animation-name: vp-autofill-sync;
   animation-duration: 0.01s;
 }
+
+.login-cinematic-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+}
+
+.login-cinematic-preload {
+  background:
+    radial-gradient(ellipse 48% 36% at 78% 22%, rgba(94, 234, 212, 0.06), transparent 62%),
+    radial-gradient(ellipse 38% 42% at 12% 78%, rgba(109, 40, 217, 0.1), transparent 64%),
+    linear-gradient(180deg, #050914 0%, #03060d 52%, #040812 100%);
+  animation: login-preload-breathe 3.4s ease-in-out infinite alternate;
+}
+
+@keyframes login-preload-breathe {
+  from {
+    filter: brightness(0.92);
+  }
+  to {
+    filter: brightness(1.12);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-cinematic-preload {
+    animation: none;
+  }
+}

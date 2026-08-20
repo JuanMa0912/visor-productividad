@@ -32,6 +32,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Puntos 3D embebidos (archivo generado, una sola linea enorme).
+    "src/components/portal/brain-points.ts",
   ]),
 ]);
 

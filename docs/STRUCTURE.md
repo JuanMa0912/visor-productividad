@@ -166,6 +166,7 @@ acotados al dominio cuando se toquen.
 | `PresenceHeartbeat.tsx` | ping de uso real a `/api/auth/heartbeat`; a los 60 min sin actividad cierra la sesion |
 | `TopBar.tsx` | barra usada por la home de productividad |
 | `portal/*` | top bar global, branding, footer, menu de usuario, toaster y tarjetas hub |
+| `portal/login-cinematic-*`, `login-brand-copy.tsx` | cerebro 3D UAID 5.0 en el panel izquierdo de login/auth |
 | `productividad/*` | controles/skeleton/empty states de productividad |
 | `hourly-analysis/*` | piezas del analisis horario |
 | `cashier/EditorialTop5.tsx` | top de cajeros |
@@ -233,6 +234,7 @@ Orden completo despues de `schema-auth.sql`:
 | `etl/orden-compra/etl_orden_compra.py` | OC incremental POS 217 → `orden_compra` + `orden_compra_linea` (232): dias nuevos + abiertas; ET/EF desde `cmmovimiento_inventario` solo a lineas; GCP via `$SYNC --only orden_compra --only orden_compra_linea` (no entra en el diario 07:50) |
 | `apply-activity-log-migration.mjs` | apoyo historico para migracion de actividad |
 | `playwright_smoke.py` | smoke E2E con dev server activo |
+| `extract-brain-glb.mjs`, `embed-brain-points.mjs` | recorte de corteza (GLB) → `public/models/brain-points.bin` y `brain-points.ts` |
 | `cleanup-logs.sh` | limpieza de logs/sesiones para systemd |
 | `benchmark-rotacion.mjs`, `debug-rotacion-items.mjs` | diagnostico rotacion |
 

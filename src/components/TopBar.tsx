@@ -40,7 +40,7 @@ const SelectField = ({
   hoverBorderClassName = "hover:border-slate-300",
   inputBgClassName = "bg-slate-50/70",
 }: {
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
   options: Array<{ value: string; label: string }>;
@@ -98,7 +98,7 @@ const MultiSelectField = ({
   hoverBorderClassName = "hover:border-slate-300",
   inputBgClassName = "bg-slate-50/70",
 }: {
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   values: string[];
   options: Array<{ value: string; label: string }>;
@@ -223,7 +223,7 @@ const DateField = ({
   hoverBorderClassName = "hover:border-slate-300",
   inputBgClassName = "bg-slate-50/70",
 }: {
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
   min?: string;

@@ -1,0 +1,3 @@
+brain-points.bin se muestreó de un recorte de corteza/cerebelo del modelo
+Z-Anatomy (https://www.z-anatomy.com / proyecto brainproject), licencia CC BY-SA 4.0.
+https://creativecommons.org/licenses/by-sa/4.0/
