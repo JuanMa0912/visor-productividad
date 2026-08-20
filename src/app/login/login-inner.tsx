@@ -95,6 +95,30 @@ export function LoginPageInner() {
         />
 
         <div className="relative w-full max-w-md">
+          <div className="login-aurora-waves" aria-hidden>
+            <span className="login-aurora-ribbon login-aurora-ribbon--teal" />
+            <span className="login-aurora-ribbon login-aurora-ribbon--violet" />
+            <span className="login-aurora-ribbon login-aurora-ribbon--sky" />
+            <svg
+              className="login-aurora-lines"
+              viewBox="0 0 500 720"
+              preserveAspectRatio="none"
+            >
+              <defs>
+                <linearGradient id="loginAuroraStroke" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#2dd4bf" stopOpacity="0" />
+                  <stop offset="35%" stopColor="#38bdf8" stopOpacity="0.85" />
+                  <stop offset="70%" stopColor="#818cf8" stopOpacity="0.75" />
+                  <stop offset="100%" stopColor="#c4b5fd" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <path d="M-30 190 C 90 110, 190 270, 300 180 S 450 120, 540 220" />
+              <path d="M-30 330 C 80 250, 200 410, 310 310 S 460 250, 540 360" />
+              <path d="M-30 470 C 100 400, 210 560, 320 460 S 450 410, 540 510" />
+            </svg>
+          </div>
+
+          <div className="relative z-10">
           <div className="mb-6 grid grid-cols-2 gap-x-4 gap-y-4 rounded-2xl border border-white/70 bg-white/55 px-4 py-4 shadow-sm shadow-slate-900/5 backdrop-blur-sm">
             {/* MercaMio primero. Mismo ancho en las 4 celdas. */}
             <div className="flex h-16 items-center justify-center sm:h-20">
@@ -237,6 +261,7 @@ export function LoginPageInner() {
               Contacta al administrador
             </a>
           </p>
+          </div>
         </div>
       </main>
     </div>

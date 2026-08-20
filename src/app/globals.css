@@ -269,10 +269,115 @@ input.vp-sync-autofill:-webkit-autofill {
 
 .login-form-aurora {
   background:
-    radial-gradient(ellipse 70% 55% at 0% 42%, rgba(56, 189, 248, 0.18), transparent 58%),
-    radial-gradient(ellipse 45% 40% at 92% 8%, rgba(109, 40, 217, 0.1), transparent 62%),
-    radial-gradient(ellipse 50% 36% at 80% 100%, rgba(14, 165, 233, 0.08), transparent 58%),
-    linear-gradient(180deg, #eef3f8 0%, #f7f8fb 48%, #eef2f7 100%);
+    radial-gradient(ellipse 70% 55% at 0% 42%, rgba(56, 189, 248, 0.16), transparent 58%),
+    radial-gradient(ellipse 45% 40% at 92% 8%, rgba(109, 40, 217, 0.09), transparent 62%),
+    radial-gradient(ellipse 50% 36% at 80% 100%, rgba(14, 165, 233, 0.07), transparent 58%),
+    linear-gradient(180deg, #e8eef6 0%, #f4f6fa 48%, #e8eef4 100%);
+}
+
+.login-aurora-waves {
+  position: absolute;
+  inset: -14% -32% -10%;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.login-aurora-ribbon {
+  position: absolute;
+  left: -18%;
+  width: 136%;
+  height: 36%;
+  border-radius: 50% 40% 55% 45%;
+  filter: blur(34px);
+  opacity: 0.8;
+  animation: login-aurora-drift 16s ease-in-out infinite alternate;
+}
+
+.login-aurora-ribbon--teal {
+  top: 6%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(45, 212, 191, 0.55),
+    rgba(56, 189, 248, 0.42),
+    transparent
+  );
+  animation-duration: 18s;
+}
+
+.login-aurora-ribbon--violet {
+  top: 34%;
+  height: 44%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(139, 92, 246, 0.42),
+    rgba(99, 102, 241, 0.5),
+    transparent
+  );
+  animation-duration: 22s;
+  animation-delay: -5s;
+}
+
+.login-aurora-ribbon--sky {
+  top: 58%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(14, 165, 233, 0.48),
+    rgba(165, 180, 252, 0.38),
+    transparent
+  );
+  animation-duration: 14s;
+  animation-delay: -8s;
+}
+
+.login-aurora-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.55;
+}
+
+.login-aurora-lines path {
+  fill: none;
+  stroke: url(#loginAuroraStroke);
+  stroke-width: 18;
+  stroke-linecap: round;
+  filter: blur(6px);
+  animation: login-aurora-flow 12s ease-in-out infinite alternate;
+}
+
+.login-aurora-lines path:nth-of-type(1) {
+  animation-duration: 16s;
+  animation-delay: -3s;
+  opacity: 0.8;
+}
+
+.login-aurora-lines path:nth-of-type(2) {
+  animation-duration: 13s;
+  animation-delay: -6s;
+  opacity: 0.7;
+}
+
+@keyframes login-aurora-drift {
+  from {
+    transform: translate3d(-7%, -2%, 0) rotate(-9deg) scaleX(1);
+  }
+  to {
+    transform: translate3d(8%, 5%, 0) rotate(11deg) scaleX(1.12);
+  }
+}
+
+@keyframes login-aurora-flow {
+  from {
+    transform: translateX(-4%) translateY(-2%);
+  }
+  to {
+    transform: translateX(5%) translateY(3%);
+  }
 }
 
 .login-form-watermark {
@@ -388,7 +493,9 @@ input.vp-sync-autofill:-webkit-autofill {
 @media (prefers-reduced-motion: reduce) {
   .login-cinematic-preload,
   .login-form-cta::after,
-  .login-form-uaid-word {
+  .login-form-uaid-word,
+  .login-aurora-ribbon,
+  .login-aurora-lines path {
     animation: none;
   }
 
