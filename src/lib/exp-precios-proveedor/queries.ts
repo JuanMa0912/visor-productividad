@@ -98,7 +98,9 @@ const resolveItemProveedorRow = (row: {
 };
 
 type OcLineProveedor = ResolvedItemProveedor & {
+  /** Sedes donde este proveedor surte el item en la VENTANA ancha. Solo identidad. */
   idCos: Set<string>;
+  /** Kilos del RANGO pedido por el usuario. Es lo unico que se pinta. */
   qtyByCo: Map<string, number>;
   invQtyByCo: Map<string, number>;
   poQtyByCo: Map<string, number>;
@@ -111,8 +113,11 @@ type OcLineProveedor = ResolvedItemProveedor & {
 async function queryOrdenCompraLineaProveedores(
   client: PoolClient,
   itemIds: string[],
+  /** Inicio de la ventana ancha: solo decide QUIENES surten el item. */
   fromCompact: string,
   toCompact: string,
+  /** Inicio del rango que pidio el usuario: decide CUANTOS kilos se pintan. */
+  rangeFromCompact: string,
 ): Promise<Map<string, OcLineProveedor[]>> {
   const map = new Map<string, OcLineProveedor[]>();
   if (itemIds.length === 0) return map;
@@ -134,6 +139,7 @@ async function queryOrdenCompraLineaProveedores(
     terc_nit: string | null;
     tipdoc: string;
     qty: string | number | null;
+    in_range: boolean;
   }>(
     `
     SELECT
@@ -147,14 +153,15 @@ async function queryOrdenCompraLineaProveedores(
       NULLIF(BTRIM(terc_nombre), '') AS terc_nombre,
       NULLIF(BTRIM(terc_nit), '') AS terc_nit,
       UPPER(BTRIM(tipdoc)) AS tipdoc,
-      ${ocEntradaQtySql("tipdoc")} AS qty
+      ${ocEntradaQtySql("tipdoc")} AS qty,
+      (BTRIM(fecha_dcto) >= $4) AS in_range
     FROM orden_compra_linea
     WHERE BTRIM(id_item) = ANY($1::text[])
       AND fecha_dcto >= $2
       AND fecha_dcto <= $3
       AND ${ocEntradaTipdocSql("empresa", "tipdoc")}
     `,
-    [itemIds, fromCompact, toCompact],
+    [itemIds, fromCompact, toCompact, rangeFromCompact],
   );
 
   for (const row of res.rows) {
@@ -194,6 +201,9 @@ async function queryOrdenCompraLineaProveedores(
       list.push(prov);
     }
     if (!idCo) continue;
+    // La ventana ancha solo sirve para saber que este proveedor surte esta sede.
+    prov.idCos.add(idCo);
+    if (!row.in_range) continue;
     const qty = toNum(row.qty);
     if (!(qty > 0)) continue;
     const isInv = tipdoc === "ET" || tipdoc === "EF";
@@ -214,12 +224,15 @@ async function queryOrdenCompraLineaProveedores(
         if (qty > 0) prov.qtyByCo.set(co, qty);
       }
       for (const [co, qty] of prov.poQtyByCo) {
+        // Guarda anti doble conteo: si la entrada ET/EF ya esta en el rango,
+        // el pedido FR/OC del mismo recibo no se suma encima.
         if (invCos.has(co) || !(qty > 0)) continue;
         prov.qtyByCo.set(co, (prov.qtyByCo.get(co) ?? 0) + qty);
       }
-      prov.idCos = new Set(prov.qtyByCo.keys());
     }
-    const kept = list.filter((prov) => prov.qtyByCo.size > 0);
+    // Se conserva al proveedor aunque no tenga kilos en el rango: su celda queda
+    // vacia, pero el desglose sigue diciendo quien surte el item.
+    const kept = list.filter((prov) => prov.idCos.size > 0);
     if (kept.length !== list.length) {
       list.length = 0;
       list.push(...kept);
@@ -267,6 +280,14 @@ const unitPrice = (money: number, units: number) =>
 
 const marginPct = (sales: number, cost: number) =>
   sales > 0 ? ((sales - cost) / sales) * 100 : 0;
+
+/**
+ * Margen al que SALDRIA vendido: precio de venta por kilo contra costo de
+ * entrada por kilo. Es lo unico atribuible a un proveedor; la venta completa
+ * del item en la sede no lo es, porque no se puede repartir entre proveedores.
+ */
+export const projectedMarginPct = (pvu: number, pcu: number) =>
+  pvu > 0 && pcu > 0 ? ((pvu - pcu) / pvu) * 100 : 0;
 
 /** Sedes tienda (sin Dinastía / plantas), izq→der como SEDE_ORDER del portal. */
 export const prototypeSedeColumns = (): PreciosProveedorSedeColumn[] =>
@@ -1319,6 +1340,7 @@ export async function queryPreciosProveedorItemExpand(
     variantItemIds,
     ocFromCompact,
     toCompact,
+    fromCompact,
   );
 
   const expandMap = new Map<string, PreciosProveedorExpandRow>();
@@ -1394,8 +1416,10 @@ export async function queryPreciosProveedorItemExpand(
     const pcu = costoEntrada.get(`${variantId}::${sedeKey}`) ?? 0;
     const variantLabel = String(row.label ?? variantId).trim() || variantId;
     for (const prov of provsForSede(variantId, empresa, idCo)) {
-      const kilos = prov.qtyByCo?.get(idCo) ?? 0;
-      const units = kilos > 0 ? kilos : toNum(row.cantidad);
+      // Kilos COMPRADOS dentro del rango pedido. Si no hubo entrada en ese
+      // rango la celda queda vacia: antes se caia a los kilos VENDIDOS del
+      // item, que son otra magnitud y se repetian identicos en cada proveedor.
+      const units = prov.qtyByCo?.get(idCo) ?? 0;
       const cost = units > 0 && pcu > 0 ? units * pcu : 0;
       upsertExpandCell(prov, variantId, variantLabel, empresa, {
         rowId: "",
@@ -1405,7 +1429,7 @@ export async function queryPreciosProveedorItemExpand(
         cost,
         pvu,
         pcu,
-        margenPct: marginPct(sales > 0 ? sales : pvu * units, cost),
+        margenPct: projectedMarginPct(pvu, pcu),
       });
     }
   }
