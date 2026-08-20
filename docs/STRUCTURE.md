@@ -129,8 +129,8 @@ Codigo compartido sin UI de pagina.
 | `rotacion/gestion` | GET KPIs D+0+S de un rango (`start`/`end`/`sedeScope`) o `mode=trend` (series mensuales por sede desde el roll) |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
 | `rotacion/restock-fotos` | GET metadatos o foto base64; PUT foto de item restock ya surtido |
-| `checklists/runs` | GET/POST intento: 20 min, rol encargado/revisor, 1/mes por sede, guardar respuestas, foto obligatoria en P/NC, firma al finalizar, desbloqueo panel |
-| `checklists/panel` | GET listado mensual de sedes/puntajes/tiempo/responsable; errores de esquema/SQL se devuelven en JSON |
+| `checklists/runs` | GET/POST intento: 20 min, rol encargado/revisor, 1/mes por sede, guardar respuestas, foto obligatoria en P/NC, firma al finalizar, desbloqueo y borrado desde panel |
+| `checklists/panel` | GET listado mensual de sedes/puntajes/tiempo/responsable; `?runId=` detalle (respuestas, fotos, firma) para revisar; errores de esquema/SQL se devuelven en JSON |
 | `ui-state/tutorial` | tutorial interactivo visto por clave (GET/POST `?key=`) |
 | `rotacion/tutorial` | alias legacy de tutorial Rotación |
 | `ventas-x-item`, `ventas-x-item/v2` | ventas por item |

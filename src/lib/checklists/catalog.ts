@@ -47,3 +47,20 @@ export const CHECKLIST_CATALOG: ChecklistCatalogEntry[] = [
 
 export const getChecklistCatalogEntry = (id: string) =>
   CHECKLIST_CATALOG.find((entry) => entry.id === id) ?? null;
+
+export const checklistItemLabel = (checklistId: string, key: string): string => {
+  if (checklistId === "bodega-gerencial") {
+    const code = Number(key);
+    const item = BODEGA_BLOCKS.flatMap((block) => block.q).find(
+      (entry) => entry.c === code,
+    );
+    return item?.x ?? key;
+  }
+  if (checklistId === "punto-venta") {
+    for (const block of PUNTO_VENTA_BLOCKS) {
+      const item = block.items.find((entry) => entry.id === key);
+      if (item) return item.text;
+    }
+  }
+  return key;
+};

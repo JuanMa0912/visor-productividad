@@ -723,7 +723,7 @@ Migracion: `db/migrations/20260819_checklist_runs.sql`.
 
 | Tabla | Uso |
 | --- | --- |
-| `checklist_run` | intento por sede/rol/mes (`actor_role`, `sede`, `period_year/month`, `answers`, `score_pct`, `duration_seconds`, `signature_png`); 20 min; 1 vez al mes; panel puede reabrir vencidos |
+| `checklist_run` | intento por sede/rol/mes (`actor_role`, `sede`, `period_year/month`, `answers`, `score_pct`, `duration_seconds`, `signature_png`); 20 min; 1 vez al mes; panel puede revisar, reabrir vencidos y borrar |
 | `checklist_run_evidence` | foto por ítem (`run_id`, `item_key`) cuando la respuesta es P o NC |
 
 ```bash

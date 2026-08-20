@@ -444,11 +444,75 @@ export const listPanelChecklistRuns = async (
     SELECT ${RUN_COLUMNS}
     FROM checklist_run r
     JOIN app_users u ON u.id = r.user_id
-    WHERE r.period_year = $2 AND r.period_month = $3
+    WHERE (
+      (r.period_year = $1::int AND r.period_month = $2::int)
+      OR (
+        r.period_year IS NULL
+        AND EXTRACT(YEAR FROM timezone('America/Bogota', r.started_at)) = $1::int
+        AND EXTRACT(MONTH FROM timezone('America/Bogota', r.started_at)) = $2::int
+      )
+    )
     ORDER BY r.started_at DESC
     LIMIT 400
     `,
-    [now.toISOString(), year, month],
+    [year, month],
   );
   return result.rows;
+};
+
+export const loadChecklistRunById = async (
+  client: PoolClient,
+  runId: string,
+): Promise<DbRun | null> => {
+  const result = await client.query<DbRun>(
+    `
+    SELECT ${RUN_COLUMNS},
+      r.signature_png,
+      (r.signature_png IS NOT NULL AND btrim(r.signature_png) <> '') AS has_signature
+    FROM checklist_run r
+    JOIN app_users u ON u.id = r.user_id
+    WHERE r.id = $1::uuid
+    LIMIT 1
+    `,
+    [runId],
+  );
+  return result.rows[0] ?? null;
+};
+
+export const listChecklistEvidenceForRun = async (
+  client: PoolClient,
+  runId: string,
+): Promise<{ itemKey: string; fotoBase64: string; mime: string }[]> => {
+  const result = await client.query<{
+    item_key: string;
+    foto_base64: string;
+    mime: string;
+  }>(
+    `
+    SELECT item_key, foto_base64, mime
+    FROM checklist_run_evidence
+    WHERE run_id = $1::uuid
+    ORDER BY item_key
+    `,
+    [runId],
+  );
+  return result.rows.map((row) => ({
+    itemKey: String(row.item_key).trim(),
+    fotoBase64: row.foto_base64,
+    mime: row.mime || "image/jpeg",
+  }));
+};
+
+export const deleteChecklistRun = async (
+  client: PoolClient,
+  runId: string,
+): Promise<boolean> => {
+  const result = await client.query(
+    `
+    DELETE FROM checklist_run
+    WHERE id = $1::uuid
+    `,
+    [runId],
+  );
+  return (result.rowCount ?? 0) > 0;
 };

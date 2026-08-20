@@ -10,6 +10,7 @@ import {
 import { getChecklistPeriod } from "@/lib/checklists/period";
 import {
   completeChecklistRun,
+  deleteChecklistRun,
   expireIfNeeded,
   findLatestEncargadoRun,
   findMonthlyRun,
@@ -41,9 +42,14 @@ const CACHE_CONTROL = "private, no-store";
 
 type Session = NonNullable<Awaited<ReturnType<typeof requireAuthSession>>>;
 
-const canUseChecklists = (session: Session) =>
-  session.user.role === "admin" ||
-  canAccessPortalSubsection(session.user.allowedSubdashboards, "checklists");
+const canUseChecklists = (session: Session) => {
+  const isAdmin = session.user.role === "admin";
+  return (
+    isAdmin ||
+    canAccessPortalSubsection(session.user.allowedSubdashboards, "checklists") ||
+    canUnlockChecklistRuns(session.user.specialRoles, isAdmin)
+  );
+};
 
 const withSession = (session: Session, data: unknown, status = 200) => {
   const response = NextResponse.json(data, {
@@ -210,6 +216,20 @@ export async function POST(request: Request) {
         );
       }
       return withSession(session, { run: mapChecklistRun(reopened) });
+    }
+
+    if (action === "delete") {
+      if (!canUnlockChecklistRuns(specialRoles, isAdmin)) {
+        return withSession(session, { error: "Sin permiso para borrar." }, 403);
+      }
+      if (!runId) {
+        return withSession(session, { error: "Falta el intento a borrar." }, 400);
+      }
+      const deleted = await deleteChecklistRun(client, runId);
+      if (!deleted) {
+        return withSession(session, { error: "No se encontró el intento." }, 404);
+      }
+      return withSession(session, { deleted: true, runId });
     }
 
     if (!isChecklistSessionId(checklistId)) {

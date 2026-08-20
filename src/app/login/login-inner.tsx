@@ -95,7 +95,7 @@ export function LoginPageInner() {
         />
 
         <div className="relative w-full max-w-md">
-          <div className="login-card-ring login-card-ring--logos mb-6 grid grid-cols-2 gap-x-4 gap-y-4 rounded-2xl px-4 py-4 shadow-sm shadow-slate-900/5">
+          <div className="mb-6 grid grid-cols-2 gap-x-4 gap-y-4 rounded-2xl bg-white px-4 py-4 shadow-sm shadow-slate-900/5">
             {/* MercaMio primero. Mismo ancho en las 4 celdas. */}
             <div className="flex h-16 items-center justify-center sm:h-20">
               <MercamioLogo className="h-auto w-full max-w-[11.5rem] object-contain" />
@@ -111,7 +111,7 @@ export function LoginPageInner() {
             </div>
           </div>
 
-          <div className="login-card-ring relative overflow-hidden rounded-3xl p-6 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.35)] sm:p-8">
+          <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-6 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.35)] sm:p-8">
             <p
               aria-hidden
               className="login-form-watermark pointer-events-none absolute -top-3 right-2 font-black uppercase select-none"

@@ -271,25 +271,6 @@ input.vp-sync-autofill:-webkit-autofill {
   background: #f4f6fa;
 }
 
-.login-card-ring {
-  --login-card-fill: rgba(255, 255, 255, 0.86);
-  border: 1px solid transparent;
-  background-image:
-    linear-gradient(var(--login-card-fill), var(--login-card-fill)),
-    linear-gradient(
-      135deg,
-      rgba(56, 189, 248, 0.38),
-      rgba(37, 99, 235, 0.16),
-      rgba(129, 140, 248, 0.3)
-    );
-  background-origin: border-box;
-  background-clip: padding-box, border-box;
-}
-
-.login-card-ring--logos {
-  --login-card-fill: rgba(255, 255, 255, 0.62);
-}
-
 .login-form-watermark {
   font-size: clamp(5.5rem, 18vw, 8.5rem);
   line-height: 0.8;
