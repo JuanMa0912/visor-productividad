@@ -24,7 +24,7 @@ export const buildPortalSectionsTourSteps = (
       popover: {
         title: "Tres dimensiones",
         description:
-          "Cada tarjeta abre un hub con módulos relacionados. Solo ves las secciones a las que tienes acceso.",
+          "Cada tarjeta abre el menú de módulos de esa dimensión. Solo ves las secciones y tableros a los que tienes acceso.",
         side: "top",
         align: "start",
       },

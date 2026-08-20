@@ -69,6 +69,7 @@ Codigo compartido sin UI de pagina.
 | `normalize.ts` | normalizacion de textos, sedes e IDs |
 | `utils.ts` | helpers genericos como `cn` |
 | `portal-sections.ts` | secciones UAID, subtableros, alias legacy y validacion de acceso |
+| `control-room-access.ts` | filtro de módulos de `/secciones`; mismas reglas que hubs `/venta`, `/productividad`, `/horario` |
 | `special-role-features.ts` | capacidades por `special_roles` |
 | `line-category-scope.ts` | alcance por `allowed_lines` (asadero → cat. `3`; fruver → linea N1 `01`) |
 | `rate-limit.ts` | rate limit en memoria por IP |
@@ -166,6 +167,7 @@ acotados al dominio cuando se toquen.
 | `PresenceHeartbeat.tsx` | ping de uso real a `/api/auth/heartbeat`; a los 5 min sin clic/teclado/toque/navegacion cierra la sesion |
 | `TopBar.tsx` | barra usada por la home de productividad |
 | `portal/*` | top bar global, branding, footer, menu de usuario, toaster y tarjetas hub |
+| `portal/portal-control-room.tsx` | sala de control de `/secciones` (módulos con los mismos accesos que los hubs; sin preview `/dev`) |
 | `portal/login-cinematic-*`, `login-brand-copy.tsx` | cerebro 3D UAID 5.0 en el panel izquierdo de login/auth |
 | `productividad/*` | controles/skeleton/empty states de productividad |
 | `hourly-analysis/*` | piezas del analisis horario |
