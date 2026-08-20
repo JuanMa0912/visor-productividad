@@ -60,6 +60,7 @@ type ResolvedItemProveedor = {
   fromTercero: boolean;
   qtyByCo?: Map<string, number>;
   valByCo?: Map<string, number>;
+  transitoByCo?: Map<string, number>;
 };
 
 const resolveItemProveedorRow = (row: {
@@ -105,6 +106,8 @@ type OcLineProveedor = ResolvedItemProveedor & {
   qtyByCo: Map<string, number>;
   /** Pesos comprados en el RANGO, de los MISMOS documentos que los kilos. */
   valByCo: Map<string, number>;
+  /** Kilos en transito (ET) del RANGO. Nunca entran a qtyByCo ni a invCos. */
+  transitoByCo: Map<string, number>;
   invQtyByCo: Map<string, number>;
   poQtyByCo: Map<string, number>;
   invValByCo: Map<string, number>;
@@ -211,6 +214,7 @@ async function queryOrdenCompraLineaProveedores(
         idCos: new Set(),
         qtyByCo: new Map(),
         valByCo: new Map(),
+        transitoByCo: new Map(),
         invQtyByCo: new Map(),
         poQtyByCo: new Map(),
         invValByCo: new Map(),
@@ -224,7 +228,14 @@ async function queryOrdenCompraLineaProveedores(
     if (!row.in_range) continue;
     const qty = toNum(row.qty);
     if (!(qty > 0)) continue;
-    const isInv = tipdoc === "ET" || tipdoc === "EF";
+    // El transito va a su propio balde: ni suma kilos, ni aporta costo, ni
+    // marca la sede como "ya tiene entrada" para la guarda invCos. Si lo
+    // hiciera, un ET pendiente taparia el pedido FR que si trajo mercancia.
+    if (tipdoc === "ET") {
+      prov.transitoByCo.set(idCo, (prov.transitoByCo.get(idCo) ?? 0) + qty);
+      continue;
+    }
+    const isInv = tipdoc === "EF";
     const bucket = isInv ? prov.invQtyByCo : prov.poQtyByCo;
     bucket.set(idCo, (bucket.get(idCo) ?? 0) + qty);
     const valBucket = isInv ? prov.invValByCo : prov.poValByCo;
@@ -896,6 +907,7 @@ export const queryPreciosProveedorMatrix = async (
     cells.push({
       rowId: itemId,
       sedeKey: key,
+      transito: 0,
       units,
       sales,
       cost,
@@ -1459,6 +1471,7 @@ export async function queryPreciosProveedorItemExpand(
       // rango la celda queda vacia: antes se caia a los kilos VENDIDOS del
       // item, que son otra magnitud y se repetian identicos en cada proveedor.
       const units = prov.qtyByCo?.get(idCo) ?? 0;
+      const transito = prov.transitoByCo?.get(idCo) ?? 0;
       // Costo de ESTE proveedor, de los mismos documentos que los kilos. Antes
       // se leia un unico casillero por (item, sede) sin dimension de proveedor,
       // asi que todos los proveedores de una sede mostraban el mismo $/kg.
@@ -1476,6 +1489,7 @@ export async function queryPreciosProveedorItemExpand(
         pvu,
         pcu: cellPcu,
         margenPct: projectedMarginPct(pvu, cellPcu),
+        transito,
       });
     }
   }
@@ -1540,6 +1554,7 @@ export async function queryPreciosProveedorItemExpand(
       existing.cells.push({
         rowId: expandId,
         sedeKey,
+        transito: 0,
         units: 0,
         sales: 0,
         cost: 0,

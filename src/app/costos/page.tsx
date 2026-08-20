@@ -575,25 +575,41 @@ export default function CostosPage() {
     // Sin kilos en el rango pedido no hubo entrada de ESE proveedor en ESAS
     // fechas. Se dice explicitamente en vez de dejar la celda muda: antes se
     // rellenaba con kilos de otro periodo, que es justo lo que se corrigio.
+    // El tránsito (ET) se informa aparte y NO se suma: es mercancía despachada
+    // que todavía no se recibe, así que no tiene costo ni margen realizado.
+    const transito =
+      cell.transito > 0 ? (
+        <div
+          className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-sky-100 px-1.5 text-[10px] font-semibold text-sky-800"
+          title={`${unitsFmt(cell.transito)} kg despachados y aún sin recibir (documento de tránsito ET). No se suman a lo recibido.`}
+        >
+          <span aria-hidden>→</span> {unitsFmt(cell.transito)} kg en camino
+        </div>
+      ) : null;
+
     if (!(cell.units > 0)) {
       return (
-        <span
-          className="text-[10px] font-medium text-slate-400"
-          title="Este proveedor no registra entradas de este ítem en el rango de fechas seleccionado"
-        >
-          sin entrada
-        </span>
+        <div className="leading-tight">
+          <span
+            className="text-[10px] font-medium text-slate-400"
+            title="Este proveedor no registra entradas recibidas de este ítem en el rango de fechas seleccionado"
+          >
+            sin entrada
+          </span>
+          {transito}
+        </div>
       );
     }
     return (
       <div className="leading-tight">
         <div>{unitMoney(cell.pcu)}/kg</div>
         <div className="text-[10px] font-medium opacity-90">
-          {unitsFmt(cell.units)} kg
+          {unitsFmt(cell.units)} kg recibidos
         </div>
         <div className="text-[10px] font-medium opacity-90">
           {pctFmt(cell.margenPct)} vendido
         </div>
+        {transito}
       </div>
     );
   };
@@ -604,6 +620,9 @@ export default function CostosPage() {
   ) => {
     if (!cell) return heatStyleLowGreen(-1);
     if (isExpandRow && !(cell.units > 0)) return heatStyleLowGreen(-1);
+    if (isExpandRow && metric === "units" && cell.units <= 0) {
+      return heatStyleLowGreen(-1);
+    }
     const raw =
       metric === "pvu"
         ? cell.pvu
