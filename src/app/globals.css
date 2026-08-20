@@ -275,6 +275,82 @@ input.vp-sync-autofill:-webkit-autofill {
     linear-gradient(180deg, #eef3f8 0%, #f7f8fb 48%, #eef2f7 100%);
 }
 
+.login-form-watermark {
+  font-size: clamp(5.5rem, 18vw, 8.5rem);
+  line-height: 0.8;
+  letter-spacing: -0.08em;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(79, 70, 229, 0.08));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.login-form-uaid {
+  position: relative;
+  display: inline-block;
+  isolation: isolate;
+}
+
+.login-form-uaid-spray,
+.login-form-uaid-drip,
+.login-form-uaid-word {
+  font-weight: 900;
+  letter-spacing: -0.06em;
+  text-transform: uppercase;
+}
+
+.login-form-uaid-spray,
+.login-form-uaid-drip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  user-select: none;
+}
+
+.login-form-uaid-spray {
+  color: #4338ca;
+  transform: translate(4px, 3px) rotate(-1.6deg);
+  opacity: 0.72;
+  z-index: 0;
+  -webkit-text-stroke: 5px rgba(67, 56, 202, 0.55);
+  paint-order: stroke fill;
+}
+
+.login-form-uaid-drip {
+  color: #38bdf8;
+  transform: translate(-3px, -2px) rotate(1.2deg);
+  opacity: 0.7;
+  z-index: 0;
+}
+
+.login-form-uaid-word {
+  position: relative;
+  z-index: 1;
+  background-image:
+    linear-gradient(
+      105deg,
+      transparent 35%,
+      rgba(255, 255, 255, 0.78) 50%,
+      transparent 65%
+    ),
+    linear-gradient(90deg, #0ea5e9 0%, #2563eb 48%, #4f46e5 100%);
+  background-size: 220% 100%, 100% 100%;
+  background-position: -120% 0, 0 0;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: login-form-uaid-sheen 4.8s ease-in-out infinite;
+}
+
+@keyframes login-form-uaid-sheen {
+  from {
+    background-position: -120% 0, 0 0;
+  }
+  to {
+    background-position: 180% 0, 0 0;
+  }
+}
+
 @keyframes login-form-sheen {
   from {
     transform: translateX(-120%);
@@ -312,7 +388,12 @@ input.vp-sync-autofill:-webkit-autofill {
 
 @media (prefers-reduced-motion: reduce) {
   .login-cinematic-preload,
-  .login-form-cta::after {
+  .login-form-cta::after,
+  .login-form-uaid-word {
     animation: none;
+  }
+
+  .login-form-uaid-word {
+    background-position: 0 0, 0 0;
   }
 }

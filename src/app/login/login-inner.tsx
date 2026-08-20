@@ -13,7 +13,7 @@ import {
 import { useAuth } from "@/lib/auth/auth-context";
 import { LOGIN_IDLE_QUERY } from "@/lib/auth/session-idle";
 import type { AuthUser } from "@/lib/auth/types";
-import { PORTAL_APP_VERSION } from "@/lib/shared/uaid-brand";
+import { PORTAL_APP_VERSION, PORTAL_APP_VERSION_LABEL } from "@/lib/shared/uaid-brand";
 
 const sanitizeFrom = (raw: string | null): string => {
   // `/` es productividad por linea; tras login el hub del portal es `/secciones`.
@@ -112,22 +112,36 @@ export function LoginPageInner() {
           </div>
 
           <div className="relative overflow-hidden rounded-3xl border border-white/80 bg-white/80 p-6 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.35)] backdrop-blur-md sm:p-8">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.38em] text-slate-400">
-              Bienvenido
+            <p
+              aria-hidden
+              className="login-form-watermark pointer-events-none absolute -top-3 right-2 font-black uppercase select-none"
+            >
+              {PORTAL_APP_VERSION.replace(/^v/i, "")}
             </p>
-            <h2 className="mt-3 flex items-center gap-4">
-              <span className="font-display text-[2.85rem] font-black uppercase leading-[0.85] tracking-[-0.08em] text-slate-950 sm:text-[3.35rem]">
-                UAID
+
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-700">
+              Nueva versión · {PORTAL_APP_VERSION_LABEL}
+            </p>
+            <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+              <span className="block text-lg font-semibold text-slate-700 sm:text-xl">
+                Bienvenido a
               </span>
-              <span
-                aria-hidden
-                className="h-8 w-px shrink-0 bg-slate-200 sm:h-10"
-              />
-              <span className="font-mono text-[13px] font-medium tracking-[0.28em] text-slate-400 sm:text-sm">
-                {PORTAL_APP_VERSION.replace(/^v/i, "")}
+              <span className="mt-1 flex flex-wrap items-baseline gap-x-3">
+                <span className="login-form-uaid" aria-label="UAID">
+                  <span className="login-form-uaid-spray" aria-hidden>
+                    UAID
+                  </span>
+                  <span className="login-form-uaid-drip" aria-hidden>
+                    UAID
+                  </span>
+                  <span className="login-form-uaid-word">UAID</span>
+                </span>
+                <span className="text-slate-800">
+                  {PORTAL_APP_VERSION.replace(/^v/i, "")}
+                </span>
               </span>
             </h2>
-            <p className="mt-4 text-sm leading-relaxed text-slate-500">
+            <p className="mt-3 text-sm leading-relaxed text-slate-600">
               Ingresa tus credenciales para acceder al portal.
             </p>
 
