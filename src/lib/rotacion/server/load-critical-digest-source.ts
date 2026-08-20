@@ -10,28 +10,13 @@ import {
   isIsoDate,
   limitDateRangeWindow,
   queryRotationRows,
-  type RotationRow,
 } from "@/app/api/rotacion/route";
-import type { AbcdConfig } from "@/app/rotacion/rotacion-preamble";
 import { loadCeroEstadosForSede } from "@/lib/rotacion/server/load-cero-estados-for-sede";
-import type { CeroRotacionEstado } from "@/lib/rotacion/cero-estado";
-import {
-  emptyRestockEffectivenessScore,
-  queryRestockEffectivenessScore,
-  type RestockEffectivenessScore,
-} from "@/lib/rotacion/restock-effectiveness";
+import { emptyRestockEffectivenessScore } from "@/lib/rotacion/restock-effectiveness";
+import type { RotacionCriticalDigestSource } from "@/lib/rotacion/critical-digest";
+import { queryRestockEffectivenessScore } from "@/lib/rotacion/server/query-restock-effectiveness";
 
-export type RotacionCriticalDigestSource = {
-  rows: RotationRow[];
-  abcdConfig: AbcdConfig;
-  dateRange: { start: string; end: string };
-  ceroEstadoByKey: Record<string, CeroRotacionEstado>;
-  restockEstadoByKey: Record<string, CeroRotacionEstado>;
-  restockEffectiveness: RestockEffectivenessScore;
-  sedeName: string;
-  empresa: string;
-  sedeId: string;
-};
+export type { RotacionCriticalDigestSource };
 
 export type LoadRotacionCriticalDigestInput = {
   empresa: string;

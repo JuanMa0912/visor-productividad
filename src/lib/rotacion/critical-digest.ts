@@ -4,9 +4,10 @@ import {
   makeCeroRotacionEstadoKey,
   type CeroRotacionEstado,
 } from "@/lib/rotacion/cero-estado";
-import type { RotacionCriticalDigestSource } from "@/lib/rotacion/server/load-critical-digest-source";
-import type { RestockEffectivenessScore } from "@/lib/rotacion/restock-effectiveness";
-import { emptyRestockEffectivenessScore } from "@/lib/rotacion/restock-effectiveness";
+import {
+  emptyRestockEffectivenessScore,
+  type RestockEffectivenessScore,
+} from "@/lib/rotacion/restock-effectiveness";
 import type { RotationRow, AbcdConfig, DateRange } from "@/app/rotacion/rotacion-preamble";
 import {
   NO_SALES_DI_VALUE,
@@ -48,6 +49,18 @@ export type RotacionCriticalDigestSection = {
 };
 
 export type RotacionCriticalDigestFamily = "perecederos" | "manufactura";
+
+export type RotacionCriticalDigestSource = {
+  rows: RotationRow[];
+  abcdConfig: AbcdConfig;
+  dateRange: DateRange;
+  ceroEstadoByKey: Record<string, CeroRotacionEstado>;
+  restockEstadoByKey: Record<string, CeroRotacionEstado>;
+  restockEffectiveness: RestockEffectivenessScore;
+  sedeName: string;
+  empresa: string;
+  sedeId: string;
+};
 
 export type RotacionCriticalDigest = {
   sedeName: string;
