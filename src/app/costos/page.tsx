@@ -134,6 +134,7 @@ export default function CostosPage() {
   const [selectedSublineas, setSelectedSublineas] = useState<string[]>([]);
   const [selectedEmpresas, setSelectedEmpresas] = useState<string[]>([]);
   const [selectedProveedores, setSelectedProveedores] = useState<string[]>([]);
+  const [selectedMarcas, setSelectedMarcas] = useState<string[]>([]);
   const [selectedSedes, setSelectedSedes] = useState<string[]>([]);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [itemQuery, setItemQuery] = useState("");
@@ -209,6 +210,15 @@ export default function CostosPage() {
       .map((id) => ({ value: id, label: id }));
     return [...options, ...missing];
   }, [sublineasOptions, selectedSublineas]);
+  const marcaOptions = useMemo(
+    () =>
+      (meta?.marcas ?? []).map((marca) => ({
+        value: marca.id,
+        label: marca.label,
+      })),
+    [meta],
+  );
+
   const proveedorOptions = useMemo(() => {
     const options = (meta?.proveedores ?? []).map((opt) => ({
       value: opt.id,
@@ -312,6 +322,9 @@ export default function CostosPage() {
         if (selectedSublineas.length > 0) {
           params.set("sublinea", selectedSublineas.join(","));
         }
+        if (selectedMarcas.length > 0) {
+          params.set("marca", selectedMarcas.join(","));
+        }
         if (selectedProveedores.length > 0) {
           params.set("proveedor", selectedProveedores.join(","));
         }
@@ -353,6 +366,7 @@ export default function CostosPage() {
       selectedLineas,
       selectedSublineas,
       selectedProveedores,
+    selectedMarcas,
       selectedItems,
       selectedSedes,
       selectedEmpresas,
@@ -474,6 +488,7 @@ export default function CostosPage() {
     selectedLineas,
     selectedSublineas,
     selectedProveedores,
+    selectedMarcas,
     selectedItems,
     selectedSedes,
     selectedEmpresas,
@@ -676,7 +691,7 @@ export default function CostosPage() {
         ) : null}
 
         <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
             <DiMultiSelect
               label="Empresa"
               values={selectedEmpresas}
@@ -761,6 +776,15 @@ export default function CostosPage() {
               emptyLabel="Todos"
               searchable
               onChange={setSelectedProveedores}
+            />
+            <DiMultiSelect
+              label="Marca"
+              values={selectedMarcas}
+              options={marcaOptions}
+              emptyLabel="Todas"
+              searchable
+              searchPlaceholder="Buscar marca…"
+              onChange={setSelectedMarcas}
             />
           </div>
           <div className="mt-3 flex flex-wrap items-end gap-3">

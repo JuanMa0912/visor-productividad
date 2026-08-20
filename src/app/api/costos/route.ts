@@ -120,6 +120,7 @@ export async function GET(request: Request) {
       const lineaIds = splitCostosCsv(url.searchParams.get("linea"));
       const sublineaIds = splitCostosCsv(url.searchParams.get("sublinea"));
       const proveedorIds = splitCostosCsv(url.searchParams.get("proveedor"));
+      const marcaIds = splitCostosCsv(url.searchParams.get("marca"));
       const itemIds = splitCostosCsv(url.searchParams.get("items"));
 
       if (mode === "items") {
@@ -159,6 +160,7 @@ export async function GET(request: Request) {
         lineaIds,
         sublineaIds,
         proveedorIds,
+        marcaIds,
         itemIds,
         sedeKeys: sedeKeys.length > 0 ? sedeKeys : null,
         search: url.searchParams.get("search"),
