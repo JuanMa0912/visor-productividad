@@ -604,20 +604,6 @@ export async function GET(request: Request) {
       }
       manualParam = pctv / 100;
     }
-  } else if (formato.manualParam === "impoconsumo") {
-    const raw = url.searchParams.get("impoconsumo");
-    if (raw != null && raw.trim() !== "") {
-      const v = Number.parseFloat(raw.replace(/[.,\s]/g, ""));
-      if (!Number.isFinite(v) || v < 0) {
-        return finalizeResponse(
-          NextResponse.json(
-            { error: "El impuesto al consumo debe ser un número mayor o igual a 0." },
-            { status: 400, headers: { "Cache-Control": "no-store" } },
-          ),
-        );
-      }
-      manualParam = v;
-    }
   }
 
   const lapsoStartQ = parseLapsoParam(url.searchParams.get("startLapso"));

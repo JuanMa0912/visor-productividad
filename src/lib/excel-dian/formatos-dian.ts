@@ -21,7 +21,7 @@ import {
 export type FormatoId = "1007" | "1005" | "1006";
 
 /** Tipo de parámetro manual (casilla) que pide cada formato, si aplica. */
-export type ManualParam = "prorrateo" | "impoconsumo" | null;
+export type ManualParam = "prorrateo" | null;
 
 export type FormatoDian = {
   id: FormatoId;
@@ -101,7 +101,7 @@ export const FORMATOS: Record<FormatoId, FormatoDian> = {
     sheetName: "F1006",
     columns: FORMATO_1006_COLUMNS,
     valueKeys: FORMATO_1006_VALUE_KEYS,
-    manualParam: "impoconsumo",
+    manualParam: null,
     anexoTitle: "ANEXO 1006",
     anexoGroupHeader: "Columna",
     query: queryFormato1006,

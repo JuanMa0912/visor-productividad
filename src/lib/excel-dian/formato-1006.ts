@@ -39,19 +39,19 @@ export const FORMATO_1006_VALUE_KEYS = [
 ];
 
 const CTA_1006 = `
-        ('24080510','I','N'),('24080512','I','N'),('24080513','I','N'),('24080514','I','N'),
-        ('24080519','I','N'),('24080520','I','N'),('24080522','I','N'),('24080524','I','N'),
-        ('24080530','J','N'),('24080532','J','N'),('24080533','J','N'),('24080534','J','N'),('24080539','J','N'),
-        ('24100101','K','GC'),('24100200','K','GC'),('24100175','K','DV')`;
+        ('24080510','I'),('24080512','I'),('24080513','I'),('24080514','I'),
+        ('24080519','I'),('24080520','I'),('24080522','I'),('24080524','I'),
+        ('24080530','J'),('24080532','J'),('24080533','J'),('24080534','J'),('24080539','J')`;
+
+// grupos de items gravados con impuesto al consumo (van a la cuenta 41352030)
+const GRUPOS_IMPO = "'VSMIMP','43MCOV','43MIMP'";
 
 const FORMATO_1006_QUERY = `
-WITH cta (cuenta, col, modo) AS (VALUES ${CTA_1006}),
+WITH cta (cuenta, col) AS (VALUES ${CTA_1006}),
 mayor AS (
     SELECT TRIM(c.terc) AS id_terc,
         SUM(CASE WHEN cta.col='I' THEN c.valor_cre - c.valor_deb ELSE 0 END) AS iva_generado,
-        SUM(CASE WHEN cta.col='J' THEN c.valor_cre - c.valor_deb ELSE 0 END) AS dev_compras,
-        SUM(CASE WHEN cta.col='K' AND cta.modo='GC' THEN c.valor_cre
-                 WHEN cta.col='K' AND cta.modo='DV' THEN -c.valor_deb ELSE 0 END) AS impoconsumo
+        SUM(CASE WHEN cta.col='J' THEN c.valor_cre - c.valor_deb ELSE 0 END) AS dev_compras
     FROM public.cgmovimiento_contable c
     JOIN cta ON TRIM(c.id_cuenta) = cta.cuenta
     WHERE c.id_emp = $3 AND c.lapso_doc BETWEEN $1 AND $2
@@ -62,31 +62,39 @@ notas_pdv AS (
     WHERE id_emp_fc=$3 AND lapso_doc BETWEEN $1 AND $2
       AND TRIM(id_tipdoc_fc) IN (SELECT TRIM(codigo) FROM public.tipos_documentos WHERE descripcion ILIKE '%NOTA%')
 ),
-pdv_ind AS (
+-- PDV por cliente: IVA generado POS (proxy para repartir I) e impuesto al consumo
+-- (bolsa item 901093 + 8% sobre ventas de grupos gravados).
+pdv_cliente AS (
     SELECT TRIM(p.id_terc) AS id_terc,
         SUM(CASE WHEN nt.codigo IS NULL THEN (p.imp_netos - p.vlrimpcon1 - p.vlrimpcon2)
-                 ELSE -(ABS(p.imp_netos) - ABS(p.vlrimpcon1) - ABS(p.vlrimpcon2)) END) AS iva_pos
+                 ELSE -(ABS(p.imp_netos) - ABS(p.vlrimpcon1) - ABS(p.vlrimpcon2)) END) AS iva_pos,
+        SUM(CASE WHEN TRIM(p.id_item)='901093' THEN p.vlrimpcon1 + p.vlrimpcon2 ELSE 0 END)
+          + SUM(CASE WHEN TRIM(it.id_grucon) IN (${GRUPOS_IMPO}) THEN p.vlrtot_bru * 0.08 ELSE 0 END) AS impoconsumo
     FROM public.cmmovimiento_pdv p
     LEFT JOIN notas_pdv nt ON TRIM(p.id_tipdoc_fc)=nt.codigo
+    LEFT JOIN public.items it ON TRIM(it.id_item)=TRIM(p.id_item)
     WHERE p.id_emp_fc=$3 AND p.lapso_doc BETWEEN $1 AND $2
-      AND TRIM(p.id_terc) NOT IN ('222222222222','VC')
     GROUP BY TRIM(p.id_terc)
-    HAVING SUM(CASE WHEN nt.codigo IS NULL THEN (p.imp_netos - p.vlrimpcon1 - p.vlrimpcon2)
-                    ELSE -(ABS(p.imp_netos) - ABS(p.vlrimpcon1) - ABS(p.vlrimpcon2)) END) <> 0
 ),
-pdv_total AS (SELECT COALESCE(SUM(iva_pos),0) AS t FROM pdv_ind),
+pdv_ind AS (
+    SELECT id_terc, iva_pos, impoconsumo FROM pdv_cliente
+    WHERE TRIM(id_terc) NOT IN ('222222222222','VC') AND (iva_pos <> 0 OR impoconsumo <> 0)
+),
+pdv_total AS (SELECT COALESCE(SUM(iva_pos),0) AS ti FROM pdv_ind),
+impo_gen AS (
+    SELECT COALESCE(SUM(impoconsumo),0) AS k FROM pdv_cliente WHERE TRIM(id_terc) IN ('222222222222','VC')
+),
 mayor_ajustado AS (
-    SELECT id_terc, iva_generado, dev_compras,
-        CASE WHEN $4::numeric IS NOT NULL THEN 0 ELSE impoconsumo END AS impoconsumo
+    SELECT id_terc, iva_generado, dev_compras, 0::numeric AS impoconsumo
     FROM mayor WHERE TRIM(id_terc) NOT IN ('222222222222','VC')
     UNION ALL
     SELECT '222222222222',
-        COALESCE(SUM(iva_generado),0) - (SELECT t FROM pdv_total),
+        COALESCE(SUM(iva_generado),0) - (SELECT ti FROM pdv_total),
         COALESCE(SUM(dev_compras),0),
-        CASE WHEN $4::numeric IS NOT NULL THEN $4::numeric ELSE COALESCE(SUM(impoconsumo),0) END
+        (SELECT k FROM impo_gen)
     FROM mayor WHERE TRIM(id_terc) IN ('222222222222','VC')
     UNION ALL
-    SELECT id_terc, iva_pos, 0, 0 FROM pdv_ind
+    SELECT id_terc, iva_pos, 0, impoconsumo FROM pdv_ind
 ),
 mayor2 AS (
     SELECT id_terc, SUM(iva_generado) AS iva_generado, SUM(dev_compras) AS dev_compras,
@@ -198,13 +206,11 @@ export const queryFormato1006 = async (
   startLapso: string,
   endLapso: string,
   idEmp: string,
-  impoconsumo: number | null,
 ) => {
   const result = await client.query(FORMATO_1006_QUERY, [
     startLapso,
     endLapso,
     idEmp,
-    impoconsumo,
   ]);
   return result.rows;
 };
