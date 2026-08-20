@@ -51,6 +51,7 @@ import {
 } from "@/lib/horarios/planilla-sede";
 import { toJpeg } from "html-to-image";
 import { Stepper, StepperStep } from "@/components/ui/stepper";
+import { UaidLogoGlyphSvg } from "@/components/portal/uaid-logo";
 import { PlanillaPreview } from "./planilla-preview";
 import type {
   DayKey,
@@ -1233,21 +1234,7 @@ export function IngresarHorariosInner() {
             fijo en la parte superior central de cada hoja al imprimir. Sustituye
             al titulo/fecha que el navegador colocaba en su encabezado por defecto. */}
         <div className="planilla-print-portal-header" aria-hidden="true">
-          <svg
-            className="planilla-print-portal-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
-            <path d="M20 3v4" />
-            <path d="M22 5h-4" />
-            <path d="M4 17v2" />
-            <path d="M5 18H3" />
-          </svg>
+          <UaidLogoGlyphSvg className="planilla-print-portal-icon" />
           <span className="planilla-print-portal-name">Portal UAID</span>
         </div>
         <div className="pointer-events-none fixed -left-[100000px] top-0 opacity-0">
@@ -2068,7 +2055,7 @@ export function IngresarHorariosInner() {
             .planilla-print-portal-icon {
               width: 5mm !important;
               height: 5mm !important;
-              color: #6d28d9 !important;
+              color: #1d4ed8 !important;
               stroke-width: 2.25 !important;
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;

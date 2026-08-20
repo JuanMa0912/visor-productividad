@@ -1,10 +1,36 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CalendarDays, Sparkles, Users } from "lucide-react";
+import { ArrowLeft, CalendarDays, Users } from "lucide-react";
 import { PORTAL_APP_VERSION } from "@/lib/shared/uaid-brand";
+import { cn } from "@/lib/shared/utils";
 import { UserMenu } from "./user-menu";
 import { PortalTourHelpButton } from "./portal-tour-help-button";
+import { UaidLogoMark } from "./uaid-logo";
+
+const UAID_CTA_FILL =
+  "bg-linear-to-r from-sky-500 via-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30";
+const UAID_CTA_HOVER =
+  "transition-all hover:from-sky-400 hover:via-blue-600 hover:to-indigo-500 hover:shadow-xl hover:shadow-indigo-600/25 active:scale-[0.97]";
+
+function UaidVersionChip({ compact }: { compact: boolean }) {
+  const label = PORTAL_APP_VERSION.replace(/^v/i, "");
+  return (
+    <span
+      className={cn(
+        "uaid-sheen inline-flex shrink-0 items-center justify-center font-bold tracking-wide",
+        UAID_CTA_FILL,
+        compact
+          ? "h-5 rounded-md px-1.5 text-[9px]"
+          : "h-5 rounded-md px-1.5 text-[10px]",
+      )}
+      aria-label={`Versión ${PORTAL_APP_VERSION}`}
+    >
+      {label}
+    </span>
+  );
+}
 
 export { PORTAL_APP_VERSION };
 
@@ -64,37 +90,35 @@ export function PortalBrandingHeader({
         }
       >
         <div className="flex min-w-0 items-center gap-2 sm:gap-2.5">
-          <span
-            className={
-              compact
-                ? "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-violet-500 via-violet-600 to-violet-800 text-white shadow-[0_6px_16px_-10px_rgba(91,33,182,0.65)]"
-                : "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-violet-500 via-violet-600 to-violet-800 text-white shadow-[0_8px_22px_-12px_rgba(91,33,182,0.65)]"
-            }
-            aria-hidden
+          <Link
+            href="/secciones"
+            className="flex min-w-0 items-center gap-2 rounded-lg outline-none sm:gap-2.5 focus-visible:ring-2 focus-visible:ring-blue-400/70"
+            title="Ir a secciones"
+            aria-label="Portal UAID, ir a secciones"
           >
-            <Sparkles
-              className={compact ? "h-3.5 w-3.5" : "h-4 w-4"}
-              strokeWidth={2}
+            <UaidLogoMark
+              className={
+                compact
+                  ? "h-7 w-7 shrink-0 [filter:drop-shadow(0_6px_12px_rgba(37,99,235,0.38))]"
+                  : "h-9 w-9 shrink-0 [filter:drop-shadow(0_8px_16px_rgba(37,99,235,0.4))]"
+              }
             />
-          </span>
-          {compact ? (
-            <p className="hidden min-w-0 truncate text-[12px] font-semibold tracking-tight text-foreground sm:block">
-              Portal UAID{" "}
-              <span className="font-normal text-muted-foreground/80">
-                · {PORTAL_APP_VERSION}
-              </span>
-            </p>
-          ) : (
-            <div className="hidden min-w-0 leading-tight sm:block">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
-                Portal <span className="text-muted-foreground/80">•</span> UAID{" "}
-                {PORTAL_APP_VERSION}
-              </p>
-              <p className="mt-0.5 text-[15px] font-semibold tracking-tight text-foreground">
+            {compact ? (
+              <p className="hidden min-w-0 truncate text-[12px] font-semibold tracking-tight text-foreground sm:block">
                 Portal UAID
               </p>
-            </div>
-          )}
+            ) : (
+              <div className="hidden min-w-0 leading-tight sm:block">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
+                  Portal <span className="text-muted-foreground/80">•</span> UAID
+                </p>
+                <p className="mt-0.5 text-[15px] font-semibold tracking-tight text-foreground">
+                  Portal UAID
+                </p>
+              </div>
+            )}
+            <UaidVersionChip compact={compact} />
+          </Link>
         </div>
 
         <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
@@ -123,16 +147,13 @@ export function PortalBrandingHeader({
               onClick={() => router.push("/secciones")}
               title="Ir a secciones"
               aria-label="Ir a secciones"
-              className={
-                compact
-                  ? "group/grid relative inline-flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-300 bg-linear-to-br from-white to-slate-100 text-slate-900 shadow-[0_1px_3px_-1px_rgba(15,23,42,0.18)] transition-all hover:-translate-y-0.5 hover:border-slate-400 hover:from-slate-50 hover:to-slate-200/80 hover:shadow-[0_6px_14px_-6px_rgba(15,23,42,0.35)] active:translate-y-0 active:scale-[0.96]"
-                  : "group/grid relative inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-300 bg-linear-to-br from-white to-slate-100 text-slate-900 shadow-[0_2px_6px_-2px_rgba(15,23,42,0.2)] transition-all hover:-translate-y-0.5 hover:border-slate-400 hover:from-slate-50 hover:to-slate-200/80 hover:shadow-[0_10px_22px_-10px_rgba(15,23,42,0.4)] active:translate-y-0 active:scale-[0.97]"
-              }
+              className={cn(
+                "uaid-sheen inline-flex shrink-0 items-center justify-center",
+                UAID_CTA_FILL,
+                UAID_CTA_HOVER,
+                compact ? "h-7 w-7 rounded-md" : "h-9 w-9 rounded-lg",
+              )}
             >
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 -translate-x-full bg-linear-to-r from-transparent via-white/70 to-transparent opacity-0 transition-all duration-500 ease-out group-hover/grid:translate-x-full group-hover/grid:opacity-100"
-              />
               <svg
                 aria-hidden
                 viewBox="0 0 24 24"
@@ -141,11 +162,7 @@ export function PortalBrandingHeader({
                 strokeWidth={2}
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className={
-                  compact
-                    ? "relative h-4 w-4 shrink-0 transition-transform duration-200 group-hover/grid:scale-105"
-                    : "relative h-5 w-5 shrink-0 transition-transform duration-200 group-hover/grid:scale-105"
-                }
+                className={compact ? "h-4 w-4 shrink-0" : "h-5 w-5 shrink-0"}
               >
                 <rect x="2" y="2" width="9" height="9" rx="1.5" />
                 <rect x="13" y="2" width="9" height="9" rx="1.5" />

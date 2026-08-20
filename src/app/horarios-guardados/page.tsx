@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { UaidLogoGlyphSvg } from "@/components/portal/uaid-logo";
 
 type DayKey =
   | "domingo"
@@ -958,21 +959,7 @@ export default function HorariosGuardadosPage() {
                       impresion. Sustituye al titulo/fecha/URL que el navegador
                       colocaba por defecto en los margenes. */}
                   <div className="planilla-print-portal-header" aria-hidden="true">
-                    <svg
-                      className="planilla-print-portal-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
-                      <path d="M20 3v4" />
-                      <path d="M22 5h-4" />
-                      <path d="M4 17v2" />
-                      <path d="M5 18H3" />
-                    </svg>
+                    <UaidLogoGlyphSvg className="planilla-print-portal-icon" />
                     <span className="planilla-print-portal-name">Portal UAID</span>
                   </div>
                   <div className="flex flex-wrap items-start justify-between gap-3 print:hidden">
