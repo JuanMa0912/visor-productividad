@@ -275,16 +275,6 @@ input.vp-sync-autofill:-webkit-autofill {
     linear-gradient(180deg, #eef3f8 0%, #f7f8fb 48%, #eef2f7 100%);
 }
 
-.login-form-watermark {
-  font-size: clamp(5.5rem, 18vw, 8.5rem);
-  line-height: 0.8;
-  letter-spacing: -0.08em;
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(79, 70, 229, 0.08));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
 @keyframes login-form-sheen {
   from {
     transform: translateX(-120%);

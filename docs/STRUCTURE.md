@@ -163,7 +163,7 @@ acotados al dominio cuando se toquen.
 | --- | --- |
 | `HourlyAnalysis.tsx` | analisis por hora embebido en productividad/jornada |
 | `LineCard.tsx`, `LineComparisonTable.tsx`, `SelectionSummary.tsx` | tarjetas Mix y Línea (volumen + horas; sin ventas) y comparativos |
-| `PresenceHeartbeat.tsx` | ping de uso real a `/api/auth/heartbeat`; a los 60 min sin actividad cierra la sesion |
+| `PresenceHeartbeat.tsx` | ping de uso real a `/api/auth/heartbeat`; a los 5 min sin clic/teclado/toque/navegacion cierra la sesion |
 | `TopBar.tsx` | barra usada por la home de productividad |
 | `portal/*` | top bar global, branding, footer, menu de usuario, toaster y tarjetas hub |
 | `portal/login-cinematic-*`, `login-brand-copy.tsx` | cerebro 3D UAID 5.0 en el panel izquierdo de login/auth |

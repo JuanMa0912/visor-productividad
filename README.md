@@ -103,13 +103,13 @@ Piezas compartidas principales:
 2. Se revocan sesiones previas del usuario y se crea una nueva fila en `app_user_sessions`.
 3. Se registra login en `app_user_login_logs` con IP auditada y User-Agent.
 4. La UI consulta `GET /api/auth/me`; los endpoints protegidos usan `requireAuthSession` o `requireAdminSession`.
-5. `POST /api/auth/heartbeat` solo con actividad real: renueva `expires_at`/`last_activity_at`, guarda `last_path` e inserta `app_user_activity_log`. Sin actividad 60 min, la sesion vence.
+5. `POST /api/auth/heartbeat` solo con actividad real: renueva `expires_at`/`last_activity_at`, guarda `last_path` e inserta `app_user_activity_log`. Sin clic/teclado/toque/navegacion durante 5 min, la sesion vence.
 
 ### Cookies
 
 | Cookie | Uso | Propiedades |
 | --- | --- | --- |
-| `vp_session` | token de sesion | `httpOnly`, `sameSite=lax`, `secure` segun `SESSION_COOKIE_SECURE` o `NODE_ENV=production`; 60 min de inactividad real (sin clic/teclado/navegacion) cierran la sesion y dejan de contar metricas de uso |
+| `vp_session` | token de sesion | `httpOnly`, `sameSite=lax`, `secure` segun `SESSION_COOKIE_SECURE` o `NODE_ENV=production`; 5 min de inactividad real (sin clic/teclado/toque/navegacion) cierran la sesion y dejan de contar metricas de uso |
 | `vp_csrf` | token CSRF para mutaciones protegidas | legible por cliente, `sameSite=lax`, `secure` igual que la sesion |
 
 En despliegues HTTP planos se debe usar `SESSION_COOKIE_SECURE=false`; al pasar a

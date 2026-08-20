@@ -4,35 +4,45 @@ import { useCallback, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import {
-  SESSION_IDLE_MS,
   isSessionIdle,
   loginUrlAfterIdle,
+  shouldRecordActivity,
 } from "@/lib/auth/session-idle";
 
 const HEARTBEAT_INTERVAL_MS = 60_000;
-const IDLE_CHECK_INTERVAL_MS = 15_000;
+const IDLE_CHECK_INTERVAL_MS = 5_000;
 const ACTIVITY_WINDOW_MS = 60_000;
 
+/** Gestos deliberados. `scroll` no cuenta: al volver a la pestaña el browser
+ * dispara scroll de restauración y eso reiniciaba el idle de forma intermitente. */
+const ACTIVITY_EVENTS = [
+  "pointerdown",
+  "mousedown",
+  "keydown",
+  "touchstart",
+  "click",
+] as const;
+
 /**
- * Reporta uso real a /api/auth/heartbeat y cierra la sesion a los 60 min
- * sin clic/teclado/scroll/navegacion, para no inflar metricas de uso.
+ * Reporta uso real a /api/auth/heartbeat y cierra la sesion a los 5 min
+ * sin clic/teclado/toque/navegacion, para no inflar metricas de uso.
  */
 export default function PresenceHeartbeat() {
   const pathname = usePathname();
   const { status, logout } = useAuth();
   const isAuthenticated = status === "authenticated";
-  const lastActivityRef = useRef<number>(
-    typeof window === "undefined" ? 0 : Date.now(),
-  );
+  const lastActivityRef = useRef<number>(Date.now());
   const inFlightRef = useRef(false);
   const cancelledRef = useRef(false);
   const loggingOutRef = useRef(false);
+  const logoutRef = useRef(logout);
+  logoutRef.current = logout;
 
   const endIdleSession = useCallback(() => {
     if (loggingOutRef.current) return;
     loggingOutRef.current = true;
-    void logout({ redirectTo: loginUrlAfterIdle() });
-  }, [logout]);
+    void logoutRef.current({ redirectTo: loginUrlAfterIdle() });
+  }, []);
 
   const sendHeartbeat = useCallback(
     async (force = false) => {
@@ -73,32 +83,32 @@ export default function PresenceHeartbeat() {
     [endIdleSession],
   );
 
+  const sendHeartbeatRef = useRef(sendHeartbeat);
+  sendHeartbeatRef.current = sendHeartbeat;
+
+  const markActive = useCallback(() => {
+    const now = Date.now();
+    if (!shouldRecordActivity(lastActivityRef.current, now)) {
+      endIdleSession();
+      return;
+    }
+    lastActivityRef.current = now;
+  }, [endIdleSession]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!isAuthenticated) return;
     cancelledRef.current = false;
     loggingOutRef.current = false;
 
-    const markActive = () => {
-      lastActivityRef.current = Date.now();
-    };
-
-    const activityEvents: Array<keyof WindowEventMap> = [
-      "mousedown",
-      "keydown",
-      "scroll",
-      "touchstart",
-      "click",
-      "pointerdown",
-    ];
-    activityEvents.forEach((event) =>
+    ACTIVITY_EVENTS.forEach((event) =>
       window.addEventListener(event, markActive, {
         passive: true,
       } as AddEventListenerOptions),
     );
 
     const heartbeatId = window.setInterval(() => {
-      void sendHeartbeat();
+      void sendHeartbeatRef.current();
     }, HEARTBEAT_INTERVAL_MS);
 
     const idleId = window.setInterval(() => {
@@ -113,7 +123,7 @@ export default function PresenceHeartbeat() {
         endIdleSession();
         return;
       }
-      void sendHeartbeat();
+      void sendHeartbeatRef.current();
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
 
@@ -122,18 +132,22 @@ export default function PresenceHeartbeat() {
       window.clearInterval(heartbeatId);
       window.clearInterval(idleId);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      activityEvents.forEach((event) =>
+      ACTIVITY_EVENTS.forEach((event) =>
         window.removeEventListener(event, markActive),
       );
     };
-  }, [sendHeartbeat, isAuthenticated, endIdleSession]);
+  }, [isAuthenticated, endIdleSession, markActive]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!isAuthenticated) return;
+    if (!shouldRecordActivity(lastActivityRef.current)) {
+      endIdleSession();
+      return;
+    }
     lastActivityRef.current = Date.now();
-    void sendHeartbeat(true);
-  }, [pathname, sendHeartbeat, isAuthenticated]);
+    void sendHeartbeatRef.current(true);
+  }, [pathname, isAuthenticated, endIdleSession]);
 
   return null;
 }
