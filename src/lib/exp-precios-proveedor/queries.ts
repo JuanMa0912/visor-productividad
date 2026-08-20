@@ -59,6 +59,7 @@ type ResolvedItemProveedor = {
   nit: string | null;
   fromTercero: boolean;
   qtyByCo?: Map<string, number>;
+  valByCo?: Map<string, number>;
 };
 
 const resolveItemProveedorRow = (row: {
@@ -102,8 +103,12 @@ type OcLineProveedor = ResolvedItemProveedor & {
   idCos: Set<string>;
   /** Kilos del RANGO pedido por el usuario. Es lo unico que se pinta. */
   qtyByCo: Map<string, number>;
+  /** Pesos comprados en el RANGO, de los MISMOS documentos que los kilos. */
+  valByCo: Map<string, number>;
   invQtyByCo: Map<string, number>;
   poQtyByCo: Map<string, number>;
+  invValByCo: Map<string, number>;
+  poValByCo: Map<string, number>;
 };
 
 /**
@@ -139,6 +144,7 @@ async function queryOrdenCompraLineaProveedores(
     terc_nit: string | null;
     tipdoc: string;
     qty: string | number | null;
+    valor: string | number | null;
     in_range: boolean;
   }>(
     `
@@ -154,6 +160,15 @@ async function queryOrdenCompraLineaProveedores(
       NULLIF(BTRIM(terc_nit), '') AS terc_nit,
       UPPER(BTRIM(tipdoc)) AS tipdoc,
       ${ocEntradaQtySql("tipdoc")} AS qty,
+      -- Valor efectivo. En FR/OC el tot_bruto es lo PEDIDO y la cantidad que
+      -- cuenta es lo RECIBIDO: dividir uno entre otro sin prorratear infla el
+      -- costo (medido: FR-036887 daba 26.786/kg contra 4.500/kg reales).
+      CASE
+        WHEN UPPER(BTRIM(tipdoc)) IN ('ET', 'EF') THEN COALESCE(tot_bruto, 0)
+        WHEN COALESCE(cantidad, 0) > 0
+          THEN COALESCE(tot_bruto, 0) * (COALESCE(cantidad_ent, 0) / cantidad)
+        ELSE 0
+      END AS valor,
       (BTRIM(fecha_dcto) >= $4) AS in_range
     FROM orden_compra_linea
     WHERE BTRIM(id_item) = ANY($1::text[])
@@ -195,8 +210,11 @@ async function queryOrdenCompraLineaProveedores(
         fromTercero: true,
         idCos: new Set(),
         qtyByCo: new Map(),
+        valByCo: new Map(),
         invQtyByCo: new Map(),
         poQtyByCo: new Map(),
+        invValByCo: new Map(),
+        poValByCo: new Map(),
       };
       list.push(prov);
     }
@@ -209,6 +227,8 @@ async function queryOrdenCompraLineaProveedores(
     const isInv = tipdoc === "ET" || tipdoc === "EF";
     const bucket = isInv ? prov.invQtyByCo : prov.poQtyByCo;
     bucket.set(idCo, (bucket.get(idCo) ?? 0) + qty);
+    const valBucket = isInv ? prov.invValByCo : prov.poValByCo;
+    valBucket.set(idCo, (valBucket.get(idCo) ?? 0) + Math.max(0, toNum(row.valor)));
   }
 
   for (const list of map.values()) {
@@ -220,14 +240,21 @@ async function queryOrdenCompraLineaProveedores(
     }
     for (const prov of list) {
       prov.qtyByCo = new Map();
+      prov.valByCo = new Map();
       for (const [co, qty] of prov.invQtyByCo) {
-        if (qty > 0) prov.qtyByCo.set(co, qty);
+        if (qty > 0) {
+          prov.qtyByCo.set(co, qty);
+          prov.valByCo.set(co, prov.invValByCo.get(co) ?? 0);
+        }
       }
       for (const [co, qty] of prov.poQtyByCo) {
         // Guarda anti doble conteo: si la entrada ET/EF ya esta en el rango,
-        // el pedido FR/OC del mismo recibo no se suma encima.
+        // el pedido FR/OC del mismo recibo no se suma encima. El valor sigue
+        // exactamente la misma decision, para que costo y kilos salgan siempre
+        // de los mismos documentos.
         if (invCos.has(co) || !(qty > 0)) continue;
         prov.qtyByCo.set(co, (prov.qtyByCo.get(co) ?? 0) + qty);
+        prov.valByCo.set(co, (prov.valByCo.get(co) ?? 0) + (prov.poValByCo.get(co) ?? 0));
       }
     }
     // Se conserva al proveedor aunque no tenga kilos en el rango: su celda queda
@@ -1432,7 +1459,14 @@ export async function queryPreciosProveedorItemExpand(
       // rango la celda queda vacia: antes se caia a los kilos VENDIDOS del
       // item, que son otra magnitud y se repetian identicos en cada proveedor.
       const units = prov.qtyByCo?.get(idCo) ?? 0;
-      const cost = units > 0 && pcu > 0 ? units * pcu : 0;
+      // Costo de ESTE proveedor, de los mismos documentos que los kilos. Antes
+      // se leia un unico casillero por (item, sede) sin dimension de proveedor,
+      // asi que todos los proveedores de una sede mostraban el mismo $/kg.
+      const provValue = prov.valByCo?.get(idCo) ?? 0;
+      const provPcu = units > 0 && provValue > 0 ? provValue / units : 0;
+      const cellPcu = provPcu > 0 ? provPcu : pcu;
+      const cost =
+        provValue > 0 ? provValue : units > 0 && pcu > 0 ? units * pcu : 0;
       upsertExpandCell(prov, variantId, variantLabel, empresa, {
         rowId: "",
         sedeKey,
@@ -1440,8 +1474,8 @@ export async function queryPreciosProveedorItemExpand(
         sales,
         cost,
         pvu,
-        pcu,
-        margenPct: projectedMarginPct(pvu, pcu),
+        pcu: cellPcu,
+        margenPct: projectedMarginPct(pvu, cellPcu),
       });
     }
   }
