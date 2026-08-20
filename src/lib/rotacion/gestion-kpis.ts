@@ -237,6 +237,43 @@ export const buildGestionMonthlySedeSeries = (
   };
 };
 
+export const sliceGestionMonthlySedeSeries = (
+  monthly: RotacionGestionMonthlySedeSeries,
+  monthKeys?: readonly string[],
+): RotacionGestionMonthlySedeSeries => {
+  if (!monthKeys || monthKeys.length === 0) return monthly;
+  const keep = new Set(monthKeys);
+  const indexes = monthly.months
+    .map((month, index) => ({ month, index }))
+    .filter((entry) => keep.has(entry.month));
+  if (indexes.length === 0) {
+    return {
+      months: [],
+      monthLabels: [],
+      series: monthly.series.map((serie) => ({
+        ...serie,
+        inventoryValue: [],
+        inventoryUnits: [],
+      })),
+    };
+  }
+  return {
+    months: indexes.map((entry) => entry.month),
+    monthLabels: indexes.map(
+      (entry) => monthly.monthLabels[entry.index] ?? entry.month,
+    ),
+    series: monthly.series.map((serie) => ({
+      ...serie,
+      inventoryValue: indexes.map(
+        (entry) => serie.inventoryValue[entry.index] ?? 0,
+      ),
+      inventoryUnits: indexes.map(
+        (entry) => serie.inventoryUnits[entry.index] ?? 0,
+      ),
+    })),
+  };
+};
+
 export const aggregateGestionTrendPoints = (
   rows: readonly RotacionGestionRollRow[],
   options?: {

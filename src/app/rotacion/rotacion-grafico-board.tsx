@@ -271,14 +271,6 @@ export function RotacionGraficoBoard({
     [families, tagged],
   );
 
-  const gestionTagged = useMemo(
-    () =>
-      filterTaggedRowsForChart(tagged, families, [], {
-        buckets: sliceBuckets,
-      }),
-    [families, sliceBuckets, tagged],
-  );
-
   const resetDefault = () => {
     setGroupBy("sede");
     setMetric("items");
@@ -615,8 +607,6 @@ export function RotacionGraficoBoard({
       </CardContent>
     </Card>
     <RotacionGestionPanel
-      tagged={gestionTagged}
-      dateRange={dateRange}
       families={families}
       buckets={sliceBuckets}
       sedeOptions={gestionSedeOptions}

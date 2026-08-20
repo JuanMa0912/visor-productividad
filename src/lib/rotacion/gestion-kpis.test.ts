@@ -9,6 +9,7 @@ import {
   buildRotacionGestionKpis,
   diffRotacionGestionKpis,
   previousCalendarMonthRange,
+  sliceGestionMonthlySedeSeries,
 } from "@/lib/rotacion/gestion-kpis";
 
 const dateRange = { start: "2026-06-01", end: "2026-06-30" };
@@ -211,5 +212,59 @@ describe("gestion KPIs", () => {
     assert.deepEqual(floresta?.inventoryUnits, [3, 1]);
     assert.deepEqual(calle80?.inventoryValue, [50, 0]);
     assert.deepEqual(calle80?.inventoryUnits, [2, 0]);
+  });
+
+  it("el filtro de meses recorta series sin mezclar sedes", () => {
+    const monthly = buildGestionMonthlySedeSeries(
+      [
+        {
+          semanaFin: "2026-06-28",
+          empresa: "mtodo",
+          sedeId: "001",
+          familia: "manufactura",
+          bucket: "cero",
+          itemCount: 8,
+          inventoryValue: 80,
+          inventoryUnits: 3,
+          demandaUnits: 0,
+          trackedDays: 30,
+        },
+        {
+          semanaFin: "2026-07-05",
+          empresa: "mtodo",
+          sedeId: "001",
+          familia: "manufactura",
+          bucket: "cero",
+          itemCount: 1,
+          inventoryValue: 10,
+          inventoryUnits: 1,
+          demandaUnits: 0,
+          trackedDays: 30,
+        },
+        {
+          semanaFin: "2026-07-05",
+          empresa: "mtodo",
+          sedeId: "002",
+          familia: "manufactura",
+          bucket: "cero",
+          itemCount: 4,
+          inventoryValue: 40,
+          inventoryUnits: 2,
+          demandaUnits: 0,
+          trackedDays: 30,
+        },
+      ],
+    );
+    const july = sliceGestionMonthlySedeSeries(monthly, ["2026-07"]);
+    assert.deepEqual(july.months, ["2026-07"]);
+    assert.equal(july.series.length, 2);
+    assert.deepEqual(
+      july.series.find((serie) => serie.sedeKey === "mtodo::001")?.inventoryValue,
+      [10],
+    );
+    assert.deepEqual(
+      july.series.find((serie) => serie.sedeKey === "mtodo::002")?.inventoryValue,
+      [40],
+    );
   });
 });
