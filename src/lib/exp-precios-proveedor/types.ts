@@ -36,6 +36,8 @@ export type PreciosProveedorRow = {
   units: number;
   sales: number;
   cost: number;
+  /** Costo contable de lo vendido (COGS del rollup). Distinto del costo de entrada. */
+  costoVenta: number;
   pvu: number;
   /** Costo unitario de entrada (inventario), no COGS de venta. */
   pcu: number;
@@ -49,6 +51,8 @@ export type PreciosProveedorCell = {
   units: number;
   sales: number;
   cost: number;
+  /** Costo contable de lo vendido (COGS). Distinto del costo de entrada. */
+  costoVenta: number;
   pvu: number;
   /** Costo unitario de entrada (inventario). */
   pcu: number;

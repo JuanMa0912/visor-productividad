@@ -33,6 +33,7 @@ export const mergeExpandCellInto = (
   }
   current.units += incoming.units;
   current.cost += incoming.cost;
+  current.costoVenta += incoming.costoVenta;
   // El transito se suma entre fuentes igual que los kilos, pero sigue viviendo
   // en su propio campo: nunca se mezcla con lo recibido.
   current.transito += incoming.transito;

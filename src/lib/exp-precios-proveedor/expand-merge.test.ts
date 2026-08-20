@@ -15,6 +15,7 @@ const cell = (
   units: 0,
   sales: 0,
   cost: 0,
+  costoVenta: 0,
   pvu: 0,
   pcu: 0,
   margenPct: 0,
