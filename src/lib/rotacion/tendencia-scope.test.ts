@@ -5,6 +5,8 @@ import { selectRotacionTendenciaRows, clampTendenciaDateRange, tendenciaUsesStoc
 import {
   enumerateIsoDays,
   fillDailySalesTrend,
+  isoWeekOf,
+  bucketTrendByIsoWeek,
 } from "@/lib/rotacion/server/load-sede-sales-trend";
 
 const range = { start: "2026-08-14", end: "2026-08-16" };
@@ -146,6 +148,41 @@ describe("clampTendenciaDateRange", () => {
     assert.equal(next.min, "2026-06-01");
     assert.equal(next.start, "2026-06-01");
     assert.equal(next.end, "2026-08-20");
+  });
+});
+
+describe("isoWeekOf", () => {
+  it("el 1 de junio 2026 es la semana 23", () => {
+    assert.deepEqual(isoWeekOf("2026-06-01"), {
+      year: 2026,
+      week: 23,
+      monday: "2026-06-01",
+    });
+    assert.equal(isoWeekOf("2026-06-07")?.week, 23);
+    assert.equal(isoWeekOf("2026-06-08")?.week, 24);
+    assert.equal(isoWeekOf("2026-08-20")?.week, 34);
+  });
+});
+
+describe("bucketTrendByIsoWeek", () => {
+  it("agrupa ventas en suma y deja inventario al cierre de la semana", () => {
+    const points = bucketTrendByIsoWeek("2026-06-01", "2026-06-14", [
+      { day: "2026-06-02", sales: 100, units: 5, inventoryValue: 50 },
+      { day: "2026-06-08", sales: 40, units: 8, inventoryValue: 80 },
+      { day: "2026-06-10", sales: 10, units: 7, inventoryValue: 70 },
+    ]);
+    assert.deepEqual(
+      points.map((point) => ({
+        week: point.week,
+        sales: point.sales,
+        units: point.units,
+        inventoryValue: point.inventoryValue,
+      })),
+      [
+        { week: 23, sales: 100, units: 5, inventoryValue: 50 },
+        { week: 24, sales: 50, units: 7, inventoryValue: 70 },
+      ],
+    );
   });
 });
 

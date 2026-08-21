@@ -3,18 +3,86 @@ import { resolveRotacionCleanMatview } from "@/lib/rotacion/source-tables";
 import { getRotacionSourceTable } from "@/lib/rotacion/source-context";
 
 export type RotacionSedeSalesTrendPoint = {
+  /** Lunes de la semana ISO (clave estable del punto). */
   day: string;
+  week: number;
+  weekYear: number;
   sales: number;
   units: number;
   inventoryValue: number;
 };
 
 const MAX_ITEMS = 8_000;
+const MS_DAY = 86_400_000;
 
-const emptyPoint = (
-  day: string,
+const parseIsoNoon = (iso: string): Date | null => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const date = new Date(`${iso}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatIsoDay = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+/** Semana ISO-8601 (lunes–domingo). El 1 jun 2026 es lunes = semana 23. */
+export const isoWeekOf = (
+  iso: string,
+): { year: number; week: number; monday: string } | null => {
+  const date = parseIsoNoon(iso);
+  if (!date) return null;
+  const weekday = (date.getDay() + 6) % 7;
+  const monday = new Date(date);
+  monday.setDate(date.getDate() - weekday);
+  const thursday = new Date(monday);
+  thursday.setDate(monday.getDate() + 3);
+  const year = thursday.getFullYear();
+  const jan4 = new Date(year, 0, 4);
+  const jan4Weekday = (jan4.getDay() + 6) % 7;
+  const week1Monday = new Date(jan4);
+  week1Monday.setDate(jan4.getDate() - jan4Weekday);
+  const week =
+    Math.round((monday.getTime() - week1Monday.getTime()) / (7 * MS_DAY)) + 1;
+  return { year, week, monday: formatIsoDay(monday) };
+};
+
+export type RotacionIsoWeekBucket = {
+  year: number;
+  week: number;
+  monday: string;
+  days: string[];
+};
+
+export const enumerateIsoWeeks = (
+  start: string,
+  end: string,
+): RotacionIsoWeekBucket[] => {
+  const groups = new Map<string, RotacionIsoWeekBucket>();
+  const order: string[] = [];
+  for (const day of enumerateIsoDays(start, end)) {
+    const parts = isoWeekOf(day);
+    if (!parts) continue;
+    const key = `${parts.year}-W${String(parts.week).padStart(2, "0")}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = { year: parts.year, week: parts.week, monday: parts.monday, days: [] };
+      groups.set(key, group);
+      order.push(key);
+    }
+    group.days.push(day);
+  }
+  return order.map((key) => groups.get(key)!);
+};
+
+const emptyWeekPoint = (
+  week: RotacionIsoWeekBucket,
 ): RotacionSedeSalesTrendPoint => ({
-  day,
+  day: week.monday,
+  week: week.week,
+  weekYear: week.year,
   sales: 0,
   units: 0,
   inventoryValue: 0,
@@ -35,29 +103,75 @@ export const enumerateIsoDays = (start: string, end: string): string[] => {
   return days;
 };
 
-export const fillDailySalesTrend = (
-  start: string,
-  end: string,
-  hits: Array<{
-    day: string;
-    sales?: number;
-    units?: number;
-    inventoryValue?: number;
-  }>,
-): RotacionSedeSalesTrendPoint[] => {
-  const byDay = new Map<string, RotacionSedeSalesTrendPoint>();
+type DailyHit = {
+  day: string;
+  sales?: number;
+  units?: number;
+  inventoryValue?: number;
+};
+
+const indexHitsByDay = (hits: DailyHit[]) => {
+  const byDay = new Map<
+    string,
+    { sales: number; units: number; inventoryValue: number }
+  >();
   for (const row of hits) {
     const day = row.day.slice(0, 10);
     byDay.set(day, {
-      day,
       sales: Number(row.sales) || 0,
       units: Number(row.units) || 0,
       inventoryValue: Number(row.inventoryValue) || 0,
     });
   }
-  return enumerateIsoDays(start, end).map(
-    (day) => byDay.get(day) ?? emptyPoint(day),
-  );
+  return byDay;
+};
+
+/** Conservado para pruebas del relleno diario; la gráfica usa semanas. */
+export const fillDailySalesTrend = (
+  start: string,
+  end: string,
+  hits: DailyHit[],
+): Array<{
+  day: string;
+  sales: number;
+  units: number;
+  inventoryValue: number;
+}> => {
+  const byDay = indexHitsByDay(hits);
+  return enumerateIsoDays(start, end).map((day) => ({
+    day,
+    sales: byDay.get(day)?.sales ?? 0,
+    units: byDay.get(day)?.units ?? 0,
+    inventoryValue: byDay.get(day)?.inventoryValue ?? 0,
+  }));
+};
+
+/** Ventas = suma de la semana. Inventario = última foto con dato en el recorte. */
+export const bucketTrendByIsoWeek = (
+  start: string,
+  end: string,
+  hits: DailyHit[],
+): RotacionSedeSalesTrendPoint[] => {
+  const byDay = indexHitsByDay(hits);
+  return enumerateIsoWeeks(start, end).map((week) => {
+    let sales = 0;
+    let lastHit: { units: number; inventoryValue: number } | null = null;
+    for (const day of week.days) {
+      const hit = byDay.get(day);
+      if (!hit) continue;
+      sales += hit.sales;
+      lastHit = { units: hit.units, inventoryValue: hit.inventoryValue };
+    }
+    if (!lastHit) return emptyWeekPoint(week);
+    return {
+      day: week.monday,
+      week: week.week,
+      weekYear: week.year,
+      sales,
+      units: lastHit.units,
+      inventoryValue: lastHit.inventoryValue,
+    };
+  });
 };
 
 export async function loadRotacionSedeSalesTrend(input: {
@@ -120,7 +234,7 @@ export async function loadRotacionSedeSalesTrend(input: {
     return result.rows ?? [];
   });
 
-  return fillDailySalesTrend(
+  return bucketTrendByIsoWeek(
     input.start,
     input.end,
     rows.map((row) => ({

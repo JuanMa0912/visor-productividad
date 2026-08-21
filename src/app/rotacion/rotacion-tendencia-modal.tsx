@@ -30,6 +30,8 @@ export type RotacionTendenciaModalProps = {
 
 type TrendPoint = {
   day: string;
+  week: number;
+  weekYear: number;
   sales: number;
   units: number;
   inventoryValue: number;
@@ -44,17 +46,17 @@ const METRIC_OPTIONS: Array<{
   { id: "inventario", label: "Valor inventario" },
 ];
 
-const formatDayLabel = (day: string): string => {
-  const parts = day.split("-").map(Number);
-  const year = parts[0];
-  const month = parts[1];
-  const date = parts[2];
-  if (!year || !month || !date) return day;
-  return new Date(year, month - 1, date).toLocaleDateString("es-CO", {
-    day: "2-digit",
-    month: "short",
-  });
-};
+const formatWeekLabel = (point: TrendPoint): string =>
+  Number.isFinite(point.week) && point.week > 0 ? `S${point.week}` : point.day;
+
+const normalizeTrendPoint = (raw: Partial<TrendPoint> & { day?: string }): TrendPoint => ({
+  day: String(raw.day ?? "").slice(0, 10),
+  week: Number(raw.week) || 0,
+  weekYear: Number(raw.weekYear) || 0,
+  sales: Number(raw.sales) || 0,
+  units: Number(raw.units) || 0,
+  inventoryValue: Number(raw.inventoryValue) || 0,
+});
 
 export function RotacionTendenciaModal({
   empresa,
@@ -128,7 +130,11 @@ export function RotacionTendenciaModal({
           throw new Error(data.error ?? "No fue posible cargar la tendencia.");
         }
         if (controller.signal.aborted) return;
-        setPoints(Array.isArray(data.points) ? data.points : []);
+        setPoints(
+          Array.isArray(data.points)
+            ? data.points.map((point) => normalizeTrendPoint(point))
+            : [],
+        );
         if (data.start) setAppliedStart(data.start);
         if (data.end) setAppliedEnd(data.end);
       } catch (err) {
@@ -144,7 +150,7 @@ export function RotacionTendenciaModal({
   }, [apiBasePath, appliedEnd, appliedStart, empresa, itemsKey, sedeId]);
 
   const labels = useMemo(
-    () => points.map((point) => formatDayLabel(point.day)),
+    () => points.map((point) => formatWeekLabel(point)),
     [points],
   );
   const values = useMemo(
@@ -279,7 +285,7 @@ export function RotacionTendenciaModal({
             ))}
           </span>
           <p className="text-xs text-slate-500">
-            Desde el 1 de junio.
+            Semanas ISO · 1 jun = S23.
             {summaryText}
           </p>
         </div>
@@ -294,7 +300,7 @@ export function RotacionTendenciaModal({
             <p className="py-16 text-center text-sm text-rose-700">{error}</p>
           ) : points.length === 0 ? (
             <p className="py-16 text-center text-sm text-slate-500">
-              No hay datos diarios para este recorte.
+              No hay datos semanales para este recorte.
             </p>
           ) : (
             <LineChart
@@ -306,10 +312,10 @@ export function RotacionTendenciaModal({
                   scaleType: "point",
                   tickLabelStyle: {
                     fontSize: 11,
-                    angle: labels.length > 20 ? -45 : 0,
-                    textAnchor: labels.length > 20 ? "end" : "middle",
+                    angle: labels.length > 24 ? -45 : 0,
+                    textAnchor: labels.length > 24 ? "end" : "middle",
                   },
-                  height: labels.length > 20 ? 64 : 32,
+                  height: labels.length > 24 ? 64 : 32,
                 },
               ]}
               yAxis={[
@@ -329,7 +335,7 @@ export function RotacionTendenciaModal({
                         ? "#2563eb"
                         : "#d97706",
                   area: true,
-                  showMark: values.length <= 21,
+                  showMark: true,
                   valueFormatter: (value: number | null) =>
                     value == null ? "—" : formatMetricValue(value),
                 },
