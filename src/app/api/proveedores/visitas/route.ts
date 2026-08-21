@@ -5,7 +5,7 @@ import {
 } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
 import { queryLastProveedoresDataDate } from "@/lib/proveedores/board-filters";
-import { listSedeQrTokens, listVisitas, computeVisitasMetrics } from "@/lib/proveedores/repo";
+import { listSedeQrTokens, listVisitas, computeVisitasMetrics, sanitizeQrVisitasJornada } from "@/lib/proveedores/repo";
 import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import { getLocalPortalCloudUrl } from "@/lib/shared/local-portal-notices";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
@@ -128,6 +128,10 @@ export async function GET(request: Request) {
       sedeName: sede,
       q,
     };
+    const sanitized = await sanitizeQrVisitasJornada(client);
+    if (sanitized.closed > 0 || sanitized.capped > 0) {
+      console.info("[proveedores/visitas] cierre de jornada", sanitized);
+    }
     const rows = await listVisitas(client, {
       ...filter,
       limit: mode === "export" ? 2000 : 500,

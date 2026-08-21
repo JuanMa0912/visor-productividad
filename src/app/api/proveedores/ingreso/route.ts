@@ -10,6 +10,7 @@ import {
   insertEntrada,
   resolveSedeByToken,
   searchProveedorCatalog,
+  sanitizeQrVisitasJornada,
 } from "@/lib/proveedores/repo";
 import {
   isAcceptedDatosAutorizacion,
@@ -111,6 +112,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "lookup") {
+      await sanitizeQrVisitasJornada(client);
       const open = await findOpenVisit(client, {
         sedeName: sede.sedeName,
         cedula,
@@ -123,6 +125,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "entrada") {
+      await sanitizeQrVisitasJornada(client);
       const open = await findOpenVisit(client, {
         sedeName: sede.sedeName,
         cedula,
@@ -181,6 +184,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "salida") {
+      await sanitizeQrVisitasJornada(client);
       const open =
         (await findOpenVisit(client, {
           sedeName: sede.sedeName,

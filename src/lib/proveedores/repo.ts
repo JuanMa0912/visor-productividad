@@ -5,6 +5,7 @@ import {
   listQrVisitasTablePairs,
   resolveQrVisitasTable,
 } from "@/lib/proveedores/qr-tables";
+import { qrVisitaCierreJornadaSql } from "@/lib/proveedores/visitas-jornada";
 import {
   decodeProveedorPosKey,
   encodeProveedorPosKey,
@@ -53,6 +54,44 @@ const visitasFromSql = (sedeName?: string | null): string => {
 
 const buildVisitasFilter = (args: VisitasFilterArgs) =>
   buildProveedoresVisitasFilter(args);
+
+const QR_TABLE_RE = /^qr_[a-z0-9_]+$/;
+
+/**
+ * Cierra visitas QR que cruzaron medianoche sin salida (o con salida al día
+ * siguiente). Idempotente. Corrige filas ya grabadas, no solo el filtro.
+ */
+export const sanitizeQrVisitasJornada = async (
+  client: PoolClient,
+): Promise<{ closed: number; capped: number }> => {
+  const cierreSql = qrVisitaCierreJornadaSql("entrada_at");
+  let closed = 0;
+  let capped = 0;
+  for (const { table } of listQrVisitasTablePairs()) {
+    if (!QR_TABLE_RE.test(table)) continue;
+    const closedResult = await client.query(
+      `
+      UPDATE ${table}
+      SET salida_at = ${cierreSql}
+      WHERE salida_at IS NULL
+        AND timezone('America/Bogota', entrada_at)::date
+          < timezone('America/Bogota', now())::date
+      `,
+    );
+    closed += closedResult.rowCount ?? 0;
+    const cappedResult = await client.query(
+      `
+      UPDATE ${table}
+      SET salida_at = LEAST(salida_at, ${cierreSql})
+      WHERE salida_at IS NOT NULL
+        AND timezone('America/Bogota', salida_at)::date
+          > timezone('America/Bogota', entrada_at)::date
+      `,
+    );
+    capped += cappedResult.rowCount ?? 0;
+  }
+  return { closed, capped };
+};
 
 export const resolveSedeByToken = async (
   client: PoolClient,

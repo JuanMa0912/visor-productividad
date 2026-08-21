@@ -594,7 +594,9 @@ VACUUM (ANALYZE) ventas_item_diario;
 Migraciones:
 `db/migrations/20260805_proveedores_visitas.sql`,
 `db/migrations/20260805_proveedores_visitas_pos_catalog.sql`,
-`db/migrations/20260811_proveedor_visitas_por_sede.sql`.
+`db/migrations/20260811_proveedor_visitas_por_sede.sql`,
+`db/migrations/20260813_qr_visitas_autorizacion_datos.sql`,
+`db/migrations/20260821_qr_visitas_cierre_jornada.sql`.
 
 | Tabla / vista | Uso |
 | --- | --- |
@@ -602,7 +604,7 @@ Migraciones:
 | `proveedor_pos_catalogo` | maestro de criterios del ítem (~3.4k): `empresa`+`id_cricla1`+`nombre`+`nit` |
 | `proveedor_tercero` | maestro comercial POS que usa el QR: `empresa`+`codigo`+`sucursal`+`nombre`+`nit` |
 | `proveedor_sede_qr` | token opaco por sede → URL pública `/proveedores/ingreso/[token]` |
-| `qr_calle_5ta` … `qr_chia` | marcaciones físicas por sede (entrada/salida; abierta = `salida_at IS NULL`; `autorizacion_datos_at` = habeas data al entrar) |
+| `qr_calle_5ta` … `qr_chia` | marcaciones físicas por sede (entrada/salida; abierta = `salida_at IS NULL`; `autorizacion_datos_at` = habeas data al entrar). Visita no cruza medianoche Bogotá: si no hay salida el mismo día se imputa 21:00 |
 | `proveedor_visitas` | **vista** solo lectura = `UNION ALL` de `qr_*` (la app no escribe aquí) |
 | `proveedor_visitas_legacy` | respaldo post-split; no escribir desde la app |
 | `ventas_proveedor_dia` | ventas agregadas por proveedor/día (no es el form de ingreso) |
@@ -614,6 +616,7 @@ sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260805_prove
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260805_proveedores_visitas_pos_catalog.sql
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260811_proveedor_visitas_por_sede.sql
 sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260813_qr_visitas_autorizacion_datos.sql
+sudo -u visor node scripts/apply-migration-file.mjs db/migrations/20260821_qr_visitas_cierre_jornada.sql
 ```
 
 ### 4.y Proveedores (ventas e inventario desde el POS)
