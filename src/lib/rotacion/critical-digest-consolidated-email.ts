@@ -213,6 +213,12 @@ export const aggregateConsolidatedDigestTotals = (
   };
 };
 
+const dosUnits = (part: {
+  demandaD: number;
+  cero: number;
+  restockS: number;
+}) => part.demandaD + part.cero + part.restockS;
+
 const th = (
   label: string,
   align: "left" | "right" | "center" = "left",
@@ -228,6 +234,14 @@ const td = (
 ) =>
   `<td style="padding:8px 6px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#0f172a;text-align:${align};vertical-align:middle;${extra}">${content}</td>`;
 
+/** Ítems arriba, inventario abajo. Solo en filas de sede, no en el total. */
+const stackedCountMoney = (
+  count: number,
+  inventario: number,
+  moneyColor: string,
+) =>
+  `${formatCount(count)}<div style="font-size:10px;color:${moneyColor};">${formatInventario(inventario)}</div>`;
+
 const buildOverviewRows = (digests: readonly RotacionCriticalDigest[]) =>
   digests
     .map((digest, index) => {
@@ -241,19 +255,36 @@ const buildOverviewRows = (digests: readonly RotacionCriticalDigest[]) =>
           "font-size:15px;font-weight:800;color:#1d4ed8;font-variant-numeric:tabular-nums;",
         )}
         ${td(
-          `${formatCount(breakdown.demandaD)}<div style="font-size:10px;color:#9f1239;">${formatInventario(breakdown.demandaInventario)}</div>`,
+          stackedCountMoney(
+            breakdown.demandaD,
+            breakdown.demandaInventario,
+            "#9f1239",
+          ),
           "right",
           "font-variant-numeric:tabular-nums;color:#9f1239;",
         )}
         ${td(
-          `${formatCount(breakdown.cero)}<div style="font-size:10px;color:#64748b;">${formatInventario(breakdown.ceroInventario)}</div>`,
+          stackedCountMoney(
+            breakdown.cero,
+            breakdown.ceroInventario,
+            "#64748b",
+          ),
           "right",
           "font-variant-numeric:tabular-nums;color:#475569;",
         )}
         ${td(
-          `${formatCount(breakdown.restockS)}<div style="font-size:10px;color:#0e7490;">${formatInventario(breakdown.restockInventario)}</div>`,
+          stackedCountMoney(
+            breakdown.restockS,
+            breakdown.restockInventario,
+            "#0e7490",
+          ),
           "right",
           "font-variant-numeric:tabular-nums;color:#0e7490;",
+        )}
+        ${td(
+          formatCount(dosUnits(breakdown)),
+          "right",
+          "font-variant-numeric:tabular-nums;font-weight:700;color:#0f172a;",
         )}
       </tr>`;
     })
@@ -378,6 +409,7 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
               ${th("D", "right")}
               ${th("0", "right")}
               ${th("S", "right")}
+              ${th("D+0+S", "right")}
             </tr>
           </thead>
           <tbody>
@@ -392,6 +424,11 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
               ${td(`<strong>${formatCount(totals.demandaD)}</strong>`, "right")}
               ${td(`<strong>${formatCount(totals.cero)}</strong>`, "right")}
               ${td(`<strong>${formatCount(totals.restockS)}</strong>`, "right")}
+              ${td(
+                `<strong>${formatCount(dosUnits(totals))}</strong>`,
+                "right",
+                "font-variant-numeric:tabular-nums;",
+              )}
             </tr>
           </tbody>
         </table>
@@ -451,13 +488,14 @@ export const buildRotacionCriticalDigestConsolidatedText = (
     "",
     `TOTAL CADENA ${familyLabel.toUpperCase()}: ${formatCount(totals.itemCount)} productos · ${formatInventario(totals.totalInventario)}`,
     `Restock cadena: ${scoreLabel} (${formatCount(totals.restockSold)} de ${formatCount(totals.restockMarked)})`,
-    `D ${formatCount(totals.demandaD)} · 0 ${formatCount(totals.cero)} · S ${formatCount(totals.restockS)}`,
+    `D ${formatCount(totals.demandaD)} · 0 ${formatCount(totals.cero)} · S ${formatCount(totals.restockS)} · D+0+S ${formatCount(dosUnits(totals))}`,
     "",
-    "1. COMPARATIVO | INV | D | 0 | S",
+    "1. COMPARATIVO | INV | D | 0 | S | D+0+S",
     ...digests.map((digest) => {
       const breakdown = sedeCriticalBreakdown(digest);
-      return `${digest.sedeName} | ${formatInventario(breakdown.totalInventario)} | ${formatCount(breakdown.demandaD)} | ${formatCount(breakdown.cero)} | ${formatCount(breakdown.restockS)}`;
+      return `${digest.sedeName} | ${formatInventario(breakdown.totalInventario)} | ${formatCount(breakdown.demandaD)} | ${formatCount(breakdown.cero)} | ${formatCount(breakdown.restockS)} | ${formatCount(dosUnits(breakdown))}`;
     }),
+    `Total | ${formatInventario(totals.totalInventario)} | ${formatCount(totals.demandaD)} | ${formatCount(totals.cero)} | ${formatCount(totals.restockS)} | ${formatCount(dosUnits(totals))}`,
     "",
     "2. GESTIÓN | SIN VER | %SURT 0 | %SURT S | %POND | FOCO",
     ...digests.map((digest) => {

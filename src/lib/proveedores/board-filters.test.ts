@@ -4,6 +4,7 @@ import {
   compactToIsoDate,
   parseProveedorLineaFilter,
   proveedorLineaFamiliaSql,
+  proveedoresVisitasEntradaRangeSql,
 } from "@/lib/proveedores/board-filters";
 
 describe("proveedores board-filters", () => {
@@ -24,5 +25,13 @@ describe("proveedores board-filters", () => {
 
   it("compacto a ISO", () => {
     assert.equal(compactToIsoDate("20260817"), "2026-08-17");
+  });
+
+  it("acota entrada_at al día calendario de Bogotá, no a UTC del servidor", () => {
+    const sql = proveedoresVisitasEntradaRangeSql(1, 2);
+    assert.match(sql, /America\/Bogota/);
+    assert.match(sql, /\$1::date/);
+    assert.match(sql, /\$2::date \+ 1/);
+    assert.doesNotMatch(sql, /T00:00:00/);
   });
 });

@@ -128,6 +128,23 @@ describe("critical-digest-consolidated-email", () => {
     assert.equal(totals.restockS, 2); // 1+1
   });
 
+  it("incluye la casilla D+0+S con la suma de unidades de los tres cubos", () => {
+    const digests = [
+      digestFor({ sedeName: "Floresta", sedeId: "001" }),
+      digestFor({ sedeName: "Palmira", sedeId: "002" }),
+    ];
+    const totals = aggregateConsolidatedDigestTotals(digests);
+    assert.equal(totals.demandaD + totals.cero + totals.restockS, 8);
+
+    const html = buildRotacionCriticalDigestConsolidatedHtml(digests);
+    assert.match(html, />D\+0\+S</);
+    assert.match(html, /<strong>8<\/strong>/);
+
+    const text = buildRotacionCriticalDigestConsolidatedText(digests);
+    assert.match(text, /D\+0\+S/);
+    assert.match(text, /Total \| .* \| 8$/m);
+  });
+
   it("genera asunto, HTML y texto sin perecederos", () => {
     const digests = [
       digestFor({ sedeName: "Calle 5ta", sedeId: "010" }),

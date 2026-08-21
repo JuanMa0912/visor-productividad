@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, Truck } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
@@ -83,9 +83,8 @@ export default function ProveedoresBoardPage() {
     allowedSubdashboards,
   );
   const canViewQr = canViewProveedoresQrLinks(user?.specialRoles, isAdmin);
-  const initial = useMemo(() => defaultRange(), []);
-  const [dateStart, setDateStart] = useState(initial.start);
-  const [dateEnd, setDateEnd] = useState(initial.end);
+  const [dateStart, setDateStart] = useState("");
+  const [dateEnd, setDateEnd] = useState("");
   const [sede, setSede] = useState("");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
@@ -98,6 +97,8 @@ export default function ProveedoresBoardPage() {
   >("visitas");
   const [linea, setLinea] = useState<ProveedorLineaFilter>("todas");
   const [lastDataDate, setLastDataDate] = useState<string | null>(null);
+  const visitasAbortRef = useRef<AbortController | null>(null);
+  const datesReadyRef = useRef(false);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -121,11 +122,24 @@ export default function ProveedoresBoardPage() {
       setQrLinks(canViewQr ? (data.qrLinks ?? []) : []);
       if (data.lastDataDate) {
         setLastDataDate(data.lastDataDate);
-        setDateStart(data.lastDataDate);
-        setDateEnd(data.lastDataDate);
+        if (!datesReadyRef.current) {
+          setDateStart(data.lastDataDate);
+          setDateEnd(data.lastDataDate);
+        }
+      } else if (!datesReadyRef.current) {
+        const fallback = defaultRange();
+        setDateStart(fallback.start);
+        setDateEnd(fallback.end);
       }
+      datesReadyRef.current = true;
     } catch {
       setQrLinks([]);
+      if (!datesReadyRef.current) {
+        const fallback = defaultRange();
+        setDateStart(fallback.start);
+        setDateEnd(fallback.end);
+        datesReadyRef.current = true;
+      }
     }
   }, [canViewQr]);
 
@@ -134,6 +148,9 @@ export default function ProveedoresBoardPage() {
       setError("Rango de fechas inválido.");
       return;
     }
+    visitasAbortRef.current?.abort();
+    const controller = new AbortController();
+    visitasAbortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
@@ -145,7 +162,11 @@ export default function ProveedoresBoardPage() {
       if (q.trim()) params.set("q", q.trim());
       const response = await fetch(
         `/api/proveedores/visitas?${params.toString()}`,
-        { credentials: "include", cache: "no-store" },
+        {
+          credentials: "include",
+          cache: "no-store",
+          signal: controller.signal,
+        },
       );
       const data = (await response.json()) as {
         error?: string;
@@ -156,19 +177,29 @@ export default function ProveedoresBoardPage() {
       setRows(data.rows ?? []);
       setMetrics(data.metrics ?? null);
     } catch (err) {
+      if (controller.signal.aborted) return;
       setRows([]);
       setMetrics(null);
       setError(err instanceof Error ? err.message : "Error desconocido.");
     } finally {
-      setLoading(false);
+      if (visitasAbortRef.current === controller) {
+        visitasAbortRef.current = null;
+        setLoading(false);
+      }
     }
   }, [dateEnd, dateStart, q, sede]);
 
   useEffect(() => {
     if (status !== "authenticated" || !canAccessBoard) return;
     void loadMeta();
+  }, [status, canAccessBoard, loadMeta]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !canAccessBoard) return;
+    if (!dateStart || !dateEnd) return;
     void load();
-  }, [status, canAccessBoard, load, loadMeta]);
+    return () => visitasAbortRef.current?.abort();
+  }, [status, canAccessBoard, dateStart, dateEnd, load]);
 
   const exportCsv = () => {
     const params = new URLSearchParams({

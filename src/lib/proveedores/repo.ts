@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import { proveedoresVisitasEntradaRangeSql } from "@/lib/proveedores/board-filters";
 import { normalizeEmpresaBd } from "@/lib/proveedores/line-family";
 import {
   listQrVisitasTablePairs,
@@ -51,14 +52,8 @@ const visitasFromSql = (sedeName?: string | null): string => {
 };
 
 const buildVisitasFilter = (args: VisitasFilterArgs) => {
-  const params: unknown[] = [
-    `${args.dateStart}T00:00:00`,
-    `${args.dateEnd}T23:59:59.999`,
-  ];
-  const clauses = [
-    `entrada_at >= $1::timestamptz`,
-    `entrada_at <= $2::timestamptz`,
-  ];
+  const params: unknown[] = [args.dateStart, args.dateEnd];
+  const clauses = [proveedoresVisitasEntradaRangeSql(1, 2)];
   // Filtro por sede: la tabla física ya lo implica; no hace falta sede_name = $n.
   const q = (args.q ?? "").trim().slice(0, 80);
   if (q) {
