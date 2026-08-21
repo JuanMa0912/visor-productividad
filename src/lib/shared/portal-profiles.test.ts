@@ -49,6 +49,7 @@ test("materializePortalProfilePermissions aplica preset Asadero", () => {
   assert.equal(permissions.allowedSubdashboards?.includes("informe-variacion"), true);
   assert.equal(permissions.specialRoles?.includes("alex"), false);
   assert.equal(permissions.specialRoles?.includes("comparar_horarios"), true);
+  assert.equal(permissions.specialRoles?.includes("informe_rotacion"), false);
 });
 
 test("materializePortalProfilePermissions aplica preset Fruver", () => {

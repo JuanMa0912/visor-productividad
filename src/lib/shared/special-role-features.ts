@@ -17,6 +17,8 @@ export const ROTACION_SINVENTARIO_HISTORIAL_SPECIAL_ROLES = [
 export const ROTACION_ELIMINAR_FOTO_SURTIDO_SPECIAL_ROLES = [
   "eliminar_foto_surtido",
 ] as const;
+/** Ver en Rotacion el informe (correo consolidado) de todas las sedes. */
+export const ROTACION_INFORME_SPECIAL_ROLES = ["informe_rotacion"] as const;
 /**
  * Crear nuevos horarios predeterminados (el boton "+") en el modal de
  * "Horarios predeterminados" de Ingresar horarios. Editar y aplicar los
@@ -37,6 +39,7 @@ const ROTACION_SINVENTARIO_HISTORIAL_SET = new Set<string>(
 const ROTACION_ELIMINAR_FOTO_SURTIDO_SET = new Set<string>(
   ROTACION_ELIMINAR_FOTO_SURTIDO_SPECIAL_ROLES,
 );
+const ROTACION_INFORME_SET = new Set<string>(ROTACION_INFORME_SPECIAL_ROLES);
 
 /**
  * Catalogo de ids de `special_roles` que la API de admin acepta.
@@ -50,6 +53,7 @@ export const APP_SPECIAL_ROLE_IDS = [
   "abcd",
   "historial_sinventario",
   "eliminar_foto_surtido",
+  "informe_rotacion",
   "crear_horario_predeterminado",
   "proveedores_qr",
   "checklist_encargado",
@@ -239,6 +243,26 @@ export function canDeleteRotacionRestockSurtidoFoto(
   if (!specialRoles?.length) return false;
   return specialRoles.some((r) =>
     ROTACION_ELIMINAR_FOTO_SURTIDO_SET.has(r.trim().toLowerCase()),
+  );
+}
+
+/**
+ * Puede ver el tab Informe rotación (mismo HTML que el correo consolidado
+ * de todas las sedes).
+ *
+ * - Cuentas con **rol de aplicacion** `admin`: siempre permitido.
+ * - Cualquier otra cuenta: solo con `informe_rotacion` en `special_roles`.
+ *   No entra en perfiles comerciales; hay que marcarlo en `/admin/usuarios`.
+ * - Quien no cumpla: la UI no muestra el tab.
+ */
+export function canViewRotacionInforme(
+  specialRoles: string[] | null | undefined,
+  isAdmin = false,
+): boolean {
+  if (isAdmin) return true;
+  if (!specialRoles?.length) return false;
+  return specialRoles.some((r) =>
+    ROTACION_INFORME_SET.has(r.trim().toLowerCase()),
   );
 }
 

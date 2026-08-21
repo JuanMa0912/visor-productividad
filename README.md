@@ -35,7 +35,7 @@ seguimiento operativo.
 | Productividad | `/`, `/productividad`, `/productividad/cajas` | `/api/productivity`, `/api/hourly-analysis` | ventas, horas, comparativos, CSV/XLSX/PDF/PNG |
 | Margenes | `/margenes` | `/api/margenes` | rentabilidad por linea y sede |
 | Informe variacion | `/informe-variacion` | `/api/informe-variacion` | Periodo actual vs periodo anterior (default MoM) y YoY; tablas por pestaña; ranking producto×sede; alcance por `allowed_lines` (asadero/fruver) |
-| Rotacion | `/rotacion` | `/api/rotacion`, `/api/rotacion/cero-estados*` | inventario, rotacion, ABCD, filtro CAT, estados de S.inventario (restock: conteo sin verificar/seguimiento/surtido) y auditoria |
+| Rotacion | `/rotacion` | `/api/rotacion`, `/api/rotacion/cero-estados*`, `/api/rotacion/informe` | inventario, rotacion, ABCD, filtro CAT, estados de S.inventario, auditoria e informe consolidado (tab con `informe_rotacion`) |
 | Kardex de margen | `/kardex` | `/api/kardex/*` | detalle diario y resumenes con margen `SUM/SUM` |
 | Inventario x item | `/inventario-x-item` | `/api/inventario-x-item`, `/api/inventario-x-item/presets` | pestaña del tablero Días de inventario; matrices, pivotes y presets por usuario |
 | Días de inventario | `/analisis-de-inventario` | `/api/analisis-de-inventario` | tablero con pestañas (DI, inventario por sede, ventas por ítem); DI und/valor, drill sede→ítem y mapa de calor |
@@ -128,7 +128,7 @@ HTTPS se debe remover esa excepcion o establecer `true`. Ver
 | `allowed_lines` | lineas visibles; `NULL` equivale a todas. Si solo queda `asadero` o `fruver`, margenes/rotacion/variacion se acotan (sedes «Todas» no amplian ese alcance) |
 | `allowed_dashboards` | secciones UAID (`venta`, `producto`, `operacion`); `NULL` = todas; `{}` = ninguna |
 | `allowed_subdashboards` | permisos granulares por subtablero; `NULL` = todos los regulares; `{}` (array vacío) = ninguno. `precios-proveedor` es opt-in: no se hereda de `NULL` |
-| `special_roles` | capacidades especiales: `cronograma`, `alex`, `replicar_lunes`, `comparar_horarios`, `abcd`, `historial_sinventario`, `eliminar_foto_surtido`, `crear_horario_predeterminado`, `proveedores_qr` |
+| `special_roles` | capacidades especiales: `cronograma`, `alex`, `replicar_lunes`, `comparar_horarios`, `abcd`, `historial_sinventario`, `eliminar_foto_surtido`, `informe_rotacion`, `crear_horario_predeterminado`, `proveedores_qr` |
 | `sede` | campo legacy usado como fallback |
 | `is_active` | bloqueo o habilitacion de acceso |
 
@@ -139,6 +139,7 @@ Reglas notables:
 - Links/QR de `/proveedores` requieren `special_roles` con `proveedores_qr` (admin siempre; el tablero en sí se otorga con el subtablero `proveedores`).
 - `/api/jornada-extendida/alex-report` requiere seccion `operacion` y rol especial `alex`, salvo admin.
 - Borrar foto de surtido en Historial S.inventario de Rotación: admin siempre; el resto necesita `eliminar_foto_surtido` (y `historial_sinventario` para abrir ese historial).
+- Tab **Informe rotación** en `/rotacion` (correo consolidado de todas las sedes): admin siempre; el resto necesita `informe_rotacion` (opt-in en `/admin/usuarios`; no va en perfiles comerciales).
 - Los subtableros mandan sobre roles legacy cuando ambos datos estan disponibles.
 - `/informe-variacion` exige el subtablero `informe-variacion` (no se hereda de `margenes` ni `rotacion`).
 - `/costos` exige el subtablero `precios-proveedor` marcado de forma explícita (no se hereda de `allowed_subdashboards = NULL`; perfiles gerente/subadmin no lo reciben solos). `/exp/precios-proveedor` redirige a `/costos`.

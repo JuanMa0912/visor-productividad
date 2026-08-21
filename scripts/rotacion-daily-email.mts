@@ -3,10 +3,6 @@ import path from "node:path";
 import nodemailer from "nodemailer";
 import { buildSmtpTransportOptions, resolveSmtpPort } from "@/lib/shared/smtp-transport";
 import {
-  buildRotacionCriticalDigest,
-  type RotacionCriticalDigest,
-} from "@/lib/rotacion/critical-digest";
-import {
   buildRotacionCriticalDigestHtml,
   buildRotacionCriticalDigestSubject,
   buildRotacionCriticalDigestText,
@@ -20,11 +16,9 @@ import {
   resolveRotacionEmailConsolidatedRecipients,
   resolveRotacionEmailRecipientsForSede,
 } from "@/lib/rotacion/email-pilot-sedes";
-import { loadRotacionCriticalDigestSource } from "@/lib/rotacion/server/load-critical-digest-source";
-import {
-  resolveRotacionEmailSedes,
-  type RotacionEmailSede,
-} from "@/lib/rotacion/server/resolve-email-sedes";
+import { loadAllRotacionCriticalDigests } from "@/lib/rotacion/server/load-consolidated-digest";
+import type { RotacionCriticalDigest } from "@/lib/rotacion/critical-digest";
+import type { RotacionEmailSede } from "@/lib/rotacion/server/resolve-email-sedes";
 
 const parseEnvValue = (raw: string) => {
   let value = raw.trim();
@@ -199,45 +193,29 @@ const main = async () => {
 
   let catalogSedes: RotacionEmailSede[] = [];
   try {
-    catalogSedes = await resolveRotacionEmailSedes();
+    console.log("Cargando digests · catálogo (paralelo)");
+    const bundle = await loadAllRotacionCriticalDigests({ bypassCache: true });
+    catalogSedes = bundle.sedes;
+    for (const digest of bundle.digests) {
+      digestsByKey.set(`${digest.empresa}::${digest.sedeId}`, digest);
+      console.log(
+        `[OK] Digest · ${digest.sedeName} · ${digest.total.itemCount} productos`,
+      );
+    }
+    if (bundle.digests.length < bundle.sedes.length) {
+      hadError = true;
+      console.error(
+        `[catálogo] Digests incompletos: ${bundle.digests.length}/${bundle.sedes.length} sedes.`,
+      );
+    }
   } catch (error) {
     console.error("[catálogo] No se pudieron resolver sedes:", error);
     hadError = true;
   }
 
-  const sedesToLoad = catalogSedes;
-
-  if (sedesToLoad.length === 0) {
+  if (digestsByKey.size === 0) {
     console.error("No hay sedes para cargar digests de rotación.");
     process.exit(1);
-  }
-
-  console.log(`Cargando digests · ${sedesToLoad.length} sede(s) (catálogo)`);
-
-  for (const sede of sedesToLoad) {
-    try {
-      const source = await loadRotacionCriticalDigestSource({
-        empresa: sede.empresa,
-        sedeId: sede.sedeId,
-        sedeName: sede.sedeName,
-      });
-      if (!source) {
-        console.error(
-          `[${sede.sedeName}] No hay datos de rotación disponibles (rango vacío).`,
-        );
-        hadError = true;
-        continue;
-      }
-
-      const digest = buildRotacionCriticalDigest(source);
-      digestsByKey.set(sedeKey(sede), digest);
-      console.log(
-        `[OK] Digest · ${digest.sedeName} · ${digest.total.itemCount} productos`,
-      );
-    } catch (error) {
-      hadError = true;
-      console.error(`[${sede.sedeName}] Error al cargar:`, error);
-    }
   }
 
   if (!skipIndividual) {

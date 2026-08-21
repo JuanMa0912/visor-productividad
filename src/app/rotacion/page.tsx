@@ -20,6 +20,7 @@ import {
   CircleHelp,
   BarChart3,
   Table2,
+  Mail,
   SlidersHorizontal,
   X,
 } from "lucide-react";
@@ -46,6 +47,7 @@ import {
   canDeleteRotacionRestockSurtidoFoto,
   canEditRotacionAbcdConfig,
   canViewRotacionSinventarioHistorial,
+  canViewRotacionInforme,
 } from "@/lib/shared/special-role-features";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import {
@@ -182,6 +184,10 @@ import {
 } from "./restock-surtido-foto-control";
 import { RotacionGraficoBoard } from "./rotacion-grafico-board";
 import {
+  prefetchRotacionInforme,
+  RotacionInformeBoard,
+} from "./rotacion-informe-board";
+import {
   buildRotacionRowsCacheKey,
   readRotacionRowsIdbCache,
   writeRotacionRowsIdbCache,
@@ -254,7 +260,9 @@ export function RotacionPageInner() {
   const [ready, setReady] = useState(false);
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
-  const [boardView, setBoardView] = useState<"tabla" | "grafico">("tabla");
+  const [boardView, setBoardView] = useState<"tabla" | "grafico" | "informe">(
+    "tabla",
+  );
   const [graficoRowsRaw, setGraficoRowsRaw] = useState<RotationRow[]>([]);
   const [isLoadingGrafico, setIsLoadingGrafico] = useState(false);
   const [graficoError, setGraficoError] = useState<string | null>(null);
@@ -475,10 +483,26 @@ export function RotacionPageInner() {
     [specialRoles, isAdmin],
   );
 
+  const canViewInforme = useMemo(
+    () => canViewRotacionInforme(specialRoles, isAdmin),
+    [specialRoles, isAdmin],
+  );
+
   const canDeleteSurtidoFoto = useMemo(
     () => canDeleteRotacionRestockSurtidoFoto(specialRoles, isAdmin),
     [specialRoles, isAdmin],
   );
+
+  useEffect(() => {
+    if (!canViewInforme) return;
+    prefetchRotacionInforme();
+  }, [canViewInforme]);
+
+  useEffect(() => {
+    if (!canViewInforme && boardView === "informe") {
+      setBoardView("tabla");
+    }
+  }, [canViewInforme, boardView]);
 
   const reloadRotacionRows = useCallback(
     async (
@@ -3152,6 +3176,21 @@ export function RotacionPageInner() {
             <BarChart3 className="h-4 w-4" />
             Grafico
           </button>
+          {canViewInforme ? (
+            <button
+              type="button"
+              onClick={() => setBoardView("informe")}
+              className={cn(
+                "inline-flex h-9 items-center gap-2 rounded-full px-4 text-xs font-semibold uppercase tracking-[0.14em]",
+                boardView === "informe"
+                  ? "bg-amber-600 text-white shadow-sm"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-amber-50",
+              )}
+            >
+              <Mail className="h-4 w-4" />
+              Informe rotacion
+            </button>
+          ) : null}
           {boardView === "grafico" ? (
             <p className="text-xs text-slate-500">
               Carga propia: D+0+S de Mercamio / Mercatodo / Merkmios, sin
@@ -3160,6 +3199,13 @@ export function RotacionPageInner() {
               {dateRange.start && dateRange.end
                 ? ` Rango: ${formatRangeLabel(dateRange)}.`
                 : null}
+            </p>
+          ) : null}
+          {boardView === "informe" ? (
+            <p className="text-xs text-slate-500">
+              Mismo correo consolidado de todas las sedes (Manufactura D+0+S).
+              Precarga en segundo plano; la primera vez arma el digest por
+              sede, luego sale de cache.
             </p>
           ) : null}
         </div>
@@ -3728,7 +3774,9 @@ export function RotacionPageInner() {
         </section>
         ) : null}
 
-        {boardView === "grafico" ? (
+        {boardView === "informe" && canViewInforme ? (
+          <RotacionInformeBoard />
+        ) : boardView === "grafico" ? (
           graficoError ||
           (graficoSedeSelections.length === 0 &&
             !isLoadingLineCatalog &&

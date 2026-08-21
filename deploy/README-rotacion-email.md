@@ -67,6 +67,11 @@ por ahora). Pensado para que gerencia vea si cada sede “funciona” y qué mej
 Las sedes salen del catálogo de rotación del rango por defecto. Sedes sin
 destinatario en el mapa individual igual entran al consolidado.
 
+El mismo HTML se puede ver en `/rotacion` → tab **Informe rotacion**
+(admin, o `informe_rotacion` en `/admin/usuarios`). La API
+`GET /api/rotacion/informe` reutiliza el loader paralelo del correo
+(`load-consolidated-digest.ts`) con cache de 5 min en el proceso de Next.
+
 ## Variables
 
 | Variable | Uso |

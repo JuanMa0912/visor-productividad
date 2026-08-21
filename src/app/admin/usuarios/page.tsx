@@ -303,6 +303,10 @@ const SPECIAL_ROLE_OPTIONS = [
     label: "Eliminar foto de surtido (rotacion)",
   },
   {
+    id: "informe_rotacion",
+    label: "Informe rotacion (correo todas las sedes)",
+  },
+  {
     id: "crear_horario_predeterminado",
     label: "Crear horario predeterminado",
   },
