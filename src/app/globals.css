@@ -335,7 +335,7 @@ input.vp-sync-autofill:-webkit-autofill {
 }
 
 .login-form-watermark {
-  font-size: clamp(5.5rem, 18vw, 8.5rem);
+  font-size: clamp(6.5rem, 16vw, 10rem);
   line-height: 0.8;
   letter-spacing: -0.08em;
   background: linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(79, 70, 229, 0.08));
