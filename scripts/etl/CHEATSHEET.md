@@ -302,6 +302,20 @@ replace**: subir con la local incompleta **borra en GCP** esas fechas.
 > En el `--verify`, **`SIN DATOS` no es `ATRASADA`**: la tabla existe en GCP pero esta
 > vacia, o sea espera su primera carga. Es lo normal recien aplicada una migracion.
 > `ATRASADA` de verdad es tener datos, pero mas viejos que el objetivo.
+>
+> **`OMITIDO empresa@fecha`: el sync NO sube dias a medias.** Si una (empresa, fecha) de
+> `rotacion_base_item_dia_sede` tiene filas cargadas pero `cantidad_vendida` suma **cero**,
+> es que el POS no habia cerrado el dia cuando corrio el ETL de las 07:00. El sync la
+> excluye del COPY, avisa y sale con **exit 3**; el resto de empresas y tablas suben
+> normal. Ademas, si hay algo omitido, esa tabla pasa de `replace` a `upsert` en esa
+> corrida: el DELETE del replace borra por FECHA, no por (empresa, fecha), y se llevaria
+> por delante el dato bueno que la empresa omitida pudiera tener ya en GCP.
+>
+> **Que hacer cuando aparece:** esperar a que el POS cierre (comprobar con
+> `python3 scripts/etl/rotacion-dim/etl_rotacion_dim.py --mode salidas --date YYYYMMDD --dry-run`,
+> que sale 3 mientras falte), re-correr el ETL de rotacion de esa fecha y relanzar el sync.
+> Sin esto, el dia entraba a GCP con inventario y cero ventas: el 2026-08-18 inflo el DIC
+> medio global un **4,6%** y marco **115 items** como "sin venta" sin serlo.
 
 > Los 6 ETL de la seccion 3.b tambien salen con **exit 3** en dos casos. Antes reportaban
 > `PIPELINE COMPLETADO EXITOSAMENTE` en ambos:
