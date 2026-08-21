@@ -15,6 +15,42 @@ export type RotacionTendenciaScope = {
   scoped: boolean;
 };
 
+const isIsoDay = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+/** Piso de la gráfica: 1 de junio del año del recorte. */
+export const tendenciaFloorDate = (iso: string): string => {
+  const year = Number((iso || "").slice(0, 4));
+  const safeYear = Number.isFinite(year) && year >= 2000 ? year : 2026;
+  return `${safeYear}-06-01`;
+};
+
+export const clampTendenciaDateRange = ({
+  start,
+  end,
+  availableMin,
+  availableMax,
+}: {
+  start: string;
+  end: string;
+  availableMin?: string;
+  availableMax?: string;
+}): { start: string; end: string; min: string; max: string } => {
+  const anchor = isIsoDay(end) ? end : isIsoDay(start) ? start : "2026-08-21";
+  const floor = tendenciaFloorDate(anchor);
+  const min =
+    availableMin && isIsoDay(availableMin) && availableMin > floor
+      ? availableMin
+      : floor;
+  const max =
+    availableMax && isIsoDay(availableMax) ? availableMax : anchor;
+  let nextStart = isIsoDay(start) ? start : min;
+  let nextEnd = isIsoDay(end) ? end : max;
+  if (nextStart < min) nextStart = min;
+  if (nextEnd > max) nextEnd = max;
+  if (nextStart > nextEnd) nextStart = nextEnd;
+  return { start: nextStart, end: nextEnd, min, max };
+};
+
 const uniqueItemIds = (rows: RotationRow[]): string[] => [
   ...new Set(rows.map((row) => String(row.item ?? "").trim()).filter(Boolean)),
 ];

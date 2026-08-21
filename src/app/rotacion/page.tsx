@@ -269,6 +269,7 @@ export function RotacionPageInner() {
     start: string;
     end: string;
     items: string[];
+    scoped: boolean;
     scopeLabel: string;
   } | null>(null);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
@@ -5187,7 +5188,10 @@ export function RotacionPageInner() {
                                         ),
                                         start: dateRange.start,
                                         end: dateRange.end,
-                                        items: tendenciaScope.itemIds,
+                                        items: tendenciaScope.scoped
+                                          ? tendenciaScope.itemIds
+                                          : [],
+                                        scoped: tendenciaScope.scoped,
                                         scopeLabel: tendenciaScope.label,
                                       })
                                     }
@@ -6435,7 +6439,10 @@ export function RotacionPageInner() {
           sedeName={tendenciaModal.sedeName}
           start={tendenciaModal.start}
           end={tendenciaModal.end}
+          availableMin={availableRange.start || undefined}
+          availableMax={availableRange.end || undefined}
           items={tendenciaModal.items}
+          scoped={tendenciaModal.scoped}
           scopeLabel={tendenciaModal.scopeLabel}
           onClose={() => setTendenciaModal(null)}
         />

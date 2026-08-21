@@ -10,6 +10,7 @@ import {
   getCookieValue,
 } from "@/app/rotacion/rotacion-preamble";
 import { useRotacionViewConfig } from "@/app/rotacion/rotacion-view-config-provider";
+import { clampTendenciaDateRange } from "@/lib/rotacion/tendencia-scope";
 
 export type RotacionTendenciaModalProps = {
   empresa: string;
@@ -17,7 +18,10 @@ export type RotacionTendenciaModalProps = {
   sedeName: string;
   start: string;
   end: string;
+  availableMin?: string;
+  availableMax?: string;
   items: string[];
+  scoped: boolean;
   scopeLabel: string;
   onClose: () => void;
 };
@@ -42,16 +46,33 @@ export function RotacionTendenciaModal({
   sedeName,
   start,
   end,
+  availableMin,
+  availableMax,
   items,
+  scoped,
   scopeLabel,
   onClose,
 }: RotacionTendenciaModalProps) {
   const { apiBasePath } = useRotacionViewConfig();
+  const bounds = useMemo(
+    () =>
+      clampTendenciaDateRange({
+        start,
+        end,
+        availableMin,
+        availableMax,
+      }),
+    [availableMax, availableMin, end, start],
+  );
+  const [draftStart, setDraftStart] = useState(bounds.start);
+  const [draftEnd, setDraftEnd] = useState(bounds.end);
+  const [appliedStart, setAppliedStart] = useState(bounds.start);
+  const [appliedEnd, setAppliedEnd] = useState(bounds.end);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [points, setPoints] = useState<TrendPoint[]>([]);
 
-  const itemsKey = items.join("\n");
+  const itemsKey = scoped ? items.join("\n") : "";
   useEffect(() => {
     const controller = new AbortController();
     const csrf = getCookieValue("vp_csrf");
@@ -74,20 +95,24 @@ export function RotacionTendenciaModal({
           body: JSON.stringify({
             empresa,
             sedeId,
-            start,
-            end,
+            start: appliedStart,
+            end: appliedEnd,
             items: itemIds,
           }),
         });
         const data = (await response.json()) as {
           error?: string;
           points?: TrendPoint[];
+          start?: string;
+          end?: string;
         };
         if (!response.ok) {
           throw new Error(data.error ?? "No fue posible cargar la tendencia.");
         }
         if (controller.signal.aborted) return;
         setPoints(Array.isArray(data.points) ? data.points : []);
+        if (data.start) setAppliedStart(data.start);
+        if (data.end) setAppliedEnd(data.end);
       } catch (err) {
         if (controller.signal.aborted) return;
         setError(
@@ -98,7 +123,7 @@ export function RotacionTendenciaModal({
       }
     })();
     return () => controller.abort();
-  }, [apiBasePath, empresa, end, itemsKey, sedeId, start]);
+  }, [apiBasePath, appliedEnd, appliedStart, empresa, itemsKey, sedeId]);
 
   const labels = useMemo(
     () => points.map((point) => formatDayLabel(point.day)),
@@ -112,6 +137,19 @@ export function RotacionTendenciaModal({
     () => values.reduce((sum, value) => sum + value, 0),
     [values],
   );
+
+  const applyDraftRange = () => {
+    const next = clampTendenciaDateRange({
+      start: draftStart,
+      end: draftEnd,
+      availableMin: bounds.min,
+      availableMax: bounds.max,
+    });
+    setDraftStart(next.start);
+    setDraftEnd(next.end);
+    setAppliedStart(next.start);
+    setAppliedEnd(next.end);
+  };
 
   return (
     <div
@@ -140,13 +178,47 @@ export function RotacionTendenciaModal({
           Tendencia de venta
         </h2>
         <p className="mt-1 text-sm text-slate-600">
-          {sedeName} · {scopeLabel} · {items.length.toLocaleString("es-CO")}{" "}
-          ítems
+          {sedeName} · {scopeLabel}
+          {scoped
+            ? ` · ${items.length.toLocaleString("es-CO")} ítems`
+            : " · toda la sede"}
         </p>
-        <p className="text-xs text-slate-500">
-          {start} → {end}
-          {total > 0 ? ` · Total ${formatPrice(total)}` : null}
-        </p>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Desde
+            <input
+              type="date"
+              value={draftStart}
+              min={bounds.min}
+              max={bounds.max}
+              onChange={(event) => setDraftStart(event.target.value)}
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Hasta
+            <input
+              type="date"
+              value={draftEnd}
+              min={bounds.min}
+              max={bounds.max}
+              onChange={(event) => setDraftEnd(event.target.value)}
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800"
+            />
+          </label>
+          <Button
+            type="button"
+            className="h-9 bg-amber-600 text-white hover:bg-amber-700"
+            onClick={applyDraftRange}
+          >
+            Aplicar fechas
+          </Button>
+          <p className="text-xs text-slate-500">
+            Desde el 1 de junio.{" "}
+            {total > 0 ? `Total ${formatPrice(total)}` : null}
+          </p>
+        </div>
 
         <div className="mt-4 min-h-[320px]">
           {loading ? (
@@ -170,10 +242,10 @@ export function RotacionTendenciaModal({
                   scaleType: "point",
                   tickLabelStyle: {
                     fontSize: 11,
-                    angle: labels.length > 14 ? -45 : 0,
-                    textAnchor: labels.length > 14 ? "end" : "middle",
+                    angle: labels.length > 20 ? -45 : 0,
+                    textAnchor: labels.length > 20 ? "end" : "middle",
                   },
-                  height: labels.length > 14 ? 64 : 32,
+                  height: labels.length > 20 ? 64 : 32,
                 },
               ]}
               yAxis={[

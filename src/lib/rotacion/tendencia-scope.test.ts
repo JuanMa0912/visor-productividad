@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { RotationRow } from "@/app/rotacion/rotacion-preamble";
-import { selectRotacionTendenciaRows } from "@/lib/rotacion/tendencia-scope";
+import { selectRotacionTendenciaRows, clampTendenciaDateRange } from "@/lib/rotacion/tendencia-scope";
 import {
   enumerateIsoDays,
   fillDailySalesTrend,
@@ -120,6 +120,20 @@ describe("selectRotacionTendenciaRows", () => {
     });
     assert.equal(next.label, "Cero rotación");
     assert.deepEqual(next.itemIds, ["Z0"]);
+  });
+});
+
+describe("clampTendenciaDateRange", () => {
+  it("no deja ir antes del 1 de junio del año", () => {
+    const next = clampTendenciaDateRange({
+      start: "2026-05-01",
+      end: "2026-08-20",
+      availableMin: "2026-01-01",
+      availableMax: "2026-08-20",
+    });
+    assert.equal(next.min, "2026-06-01");
+    assert.equal(next.start, "2026-06-01");
+    assert.equal(next.end, "2026-08-20");
   });
 });
 

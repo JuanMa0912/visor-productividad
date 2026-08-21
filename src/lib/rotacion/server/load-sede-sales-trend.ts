@@ -48,22 +48,30 @@ export async function loadRotacionSedeSalesTrend(input: {
   const itemIds = [
     ...new Set(input.itemIds.map((id) => String(id ?? "").trim()).filter(Boolean)),
   ].slice(0, MAX_ITEMS);
-  if (itemIds.length === 0) {
-    return fillDailySalesTrend(input.start, input.end, []);
-  }
 
   const table = resolveRotacionCleanMatview(getRotacionSourceTable());
   const rows = await withPoolClient(async (client) => {
     const exists = await client.query<{ ok: boolean }>(
       `
       SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = $1
+        SELECT 1 FROM pg_matviews WHERE matviewname = $1
       ) AS ok
       `,
       [table],
     );
     if (!exists.rows[0]?.ok) return [];
+
+    const params: unknown[] = [
+      input.empresa,
+      input.sedeId,
+      input.start,
+      input.end,
+    ];
+    let itemSql = "";
+    if (itemIds.length > 0) {
+      params.push(itemIds);
+      itemSql = ` AND BTRIM(item) = ANY($${params.length}::text[])`;
+    }
 
     const result = await client.query<{ day: string; sales: string | number }>(
       `
@@ -72,13 +80,13 @@ export async function loadRotacionSedeSalesTrend(input: {
         SUM(COALESCE(venta_sin_impuesto_dia, 0))::numeric AS sales
       FROM ${table}
       WHERE LOWER(TRIM(empresa)) = LOWER(TRIM($1))
-        AND LPAD(TRIM(sede_id), 3, '0') = LPAD(TRIM($2), 3, '0')
+        AND LPAD(TRIM(sede_id::text), 3, '0') = LPAD(TRIM($2::text), 3, '0')
         AND fecha BETWEEN $3::date AND $4::date
-        AND BTRIM(item) = ANY($5::text[])
+        ${itemSql}
       GROUP BY fecha
       ORDER BY fecha
       `,
-      [input.empresa, input.sedeId, input.start, input.end, itemIds],
+      params,
     );
     return result.rows ?? [];
   });

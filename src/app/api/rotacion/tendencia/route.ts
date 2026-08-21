@@ -6,12 +6,14 @@ import {
 } from "@/lib/shared/portal-sections";
 import { canAccessRotacionBoard } from "@/lib/shared/special-role-features";
 import {
+  getAvailableBounds,
   getRotationFilterCatalog,
+  compactToIsoDate,
   isIsoDate,
-  limitDateRangeWindow,
   resolveVisibleSedes,
 } from "@/app/api/rotacion/route";
 import { loadRotacionSedeSalesTrend } from "@/lib/rotacion/server/load-sede-sales-trend";
+import { clampTendenciaDateRange } from "@/lib/rotacion/tendencia-scope";
 import { mergeDinastiaIntoRotationCatalog } from "@/lib/rotacion/dinastia-catalog";
 import {
   canonicalizeEmpresaCode,
@@ -97,7 +99,6 @@ export async function POST(request: Request) {
       ),
     );
   }
-  const range = limitDateRangeWindow({ start: startRaw, end: endRaw });
   const itemIds = Array.isArray(body.items)
     ? body.items
         .map((item) => String(item ?? "").trim())
@@ -122,9 +123,16 @@ export async function POST(request: Request) {
       : ROTACION_SOURCE_LEGACY;
 
   try {
-    const points = await runWithRotacionSourceTableAsync(
+    const payload = await runWithRotacionSourceTableAsync(
       sourceTable,
       async () => {
+        const bounds = await getAvailableBounds();
+        const range = clampTendenciaDateRange({
+          start: startRaw,
+          end: endRaw,
+          availableMin: compactToIsoDate(bounds?.min_date ?? null) ?? undefined,
+          availableMax: compactToIsoDate(bounds?.max_date ?? null) ?? undefined,
+        });
         const catalog = await getRotationFilterCatalog(
           range.start.replaceAll("-", ""),
           range.end.replaceAll("-", ""),
@@ -145,22 +153,25 @@ export async function POST(request: Request) {
         if (!allowed) {
           throw new Error("SEDE_FORBIDDEN");
         }
-        return loadRotacionSedeSalesTrend({
+        const points = await loadRotacionSedeSalesTrend({
           empresa,
           sedeId,
           start: range.start,
           end: range.end,
           itemIds,
         });
+        return { range, points };
       },
     );
 
     return withSession(
       NextResponse.json(
         {
-          start: range.start,
-          end: range.end,
-          points,
+          start: payload.range.start,
+          end: payload.range.end,
+          min: payload.range.min,
+          max: payload.range.max,
+          points: payload.points,
         },
         { headers: { "Cache-Control": CACHE_CONTROL } },
       ),
