@@ -210,18 +210,25 @@ describe("critical-digest-consolidated-email", () => {
     assert.equal(signals.sinVerificarCero, 3);
   });
 
-  it("pondera % surtido 0 y S por cantidad de ítems", () => {
+  it("pondera % surtido 0 y S por inventario, no por promedio ni por ítems", () => {
     assert.equal(
       weightedSurtidoPct(
-        { itemCount: 4, surtido: 1 },
-        { itemCount: 1, surtido: 1 },
+        { itemCount: 4, surtido: 1, totalInventario: 100_000 },
+        { itemCount: 1, surtido: 1, totalInventario: 900_000 },
       ),
-      40,
+      92.5,
     );
     assert.equal(
       weightedSurtidoPct(
-        { itemCount: 0, surtido: 0 },
-        { itemCount: 0, surtido: 0 },
+        { itemCount: 4, surtido: 1, totalInventario: 0 },
+        { itemCount: 1, surtido: 1, totalInventario: 0 },
+      ),
+      null,
+    );
+    assert.equal(
+      weightedSurtidoPct(
+        { itemCount: 0, surtido: 0, totalInventario: 0 },
+        { itemCount: 0, surtido: 0, totalInventario: 0 },
       ),
       null,
     );
@@ -231,11 +238,11 @@ describe("critical-digest-consolidated-email", () => {
       sedeId: "001",
       manufactura: {
         ...emptySection(),
-        total: { itemCount: 5, totalInventario: 500_000 },
+        total: { itemCount: 5, totalInventario: 1_000_000 },
         demandaD: { itemCount: 2, totalInventario: 200_000, diasInventario: 10 },
         ceroRotacion: {
           itemCount: 4,
-          totalInventario: 0,
+          totalInventario: 100_000,
           sinVerificar: 2,
           seguimiento: 1,
           surtido: 1,
@@ -243,7 +250,7 @@ describe("critical-digest-consolidated-email", () => {
         },
         restockS: {
           itemCount: 1,
-          totalInventario: 0,
+          totalInventario: 900_000,
           sinVerificar: 0,
           seguimiento: 0,
           surtido: 1,
@@ -254,6 +261,8 @@ describe("critical-digest-consolidated-email", () => {
     const signals = buildSedeManagementSignals(digest);
     assert.equal(signals.surtidoPctCero, 25);
     assert.equal(signals.surtidoPctRestock, 100);
-    assert.equal(signals.surtidoPctPonderado, 40);
+    assert.equal(signals.surtidoPctPonderado, 92.5);
+    assert.notEqual(signals.surtidoPctPonderado, 62.5);
+    assert.notEqual(signals.surtidoPctPonderado, 40);
   });
 });

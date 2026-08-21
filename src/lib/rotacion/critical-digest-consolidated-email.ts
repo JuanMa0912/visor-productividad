@@ -62,7 +62,7 @@ export type SedeManagementSignals = {
   sinVerificarCero: number;
   surtidoPctCero: number | null;
   surtidoPctRestock: number | null;
-  /** % surtido 0 y S ponderado por ítems de cada cubo. */
+  /** % surtido 0 y S ponderado por inventario (COP) de cada cubo. */
   surtidoPctPonderado: number | null;
   diasInventarioD: number | null;
   /** Frases cortas de foco para el gerente (máx. 2). */
@@ -70,16 +70,34 @@ export type SedeManagementSignals = {
 };
 
 /**
- * Promedio ponderado de % surtido 0 y % surtido S, con peso = ítems de cada cubo.
- * Equivale a (surtidos 0 + surtidos S) / (ítems 0 + ítems S).
+ * % surtido 0 y S ponderado por inventario de cada cubo:
+ * (%0 × $0 + %S × $S) / ($0 + $S).
+ * No es el promedio simple (a+b)/2 ni el mix por cantidad de ítems.
  */
 export const weightedSurtidoPct = (
-  cero: Pick<SurtidoEstadoBreakdown, "itemCount" | "surtido">,
-  restock: Pick<SurtidoEstadoBreakdown, "itemCount" | "surtido">,
+  cero: Pick<SurtidoEstadoBreakdown, "itemCount" | "surtido" | "totalInventario">,
+  restock: Pick<
+    SurtidoEstadoBreakdown,
+    "itemCount" | "surtido" | "totalInventario"
+  >,
 ): number | null => {
-  const n = cero.itemCount + restock.itemCount;
-  if (n <= 0) return null;
-  return ((cero.surtido + restock.surtido) / n) * 100;
+  const pctOf = (part: { itemCount: number; surtido: number }) =>
+    part.itemCount > 0 ? (part.surtido / part.itemCount) * 100 : null;
+
+  const parts: Array<{ pct: number; weight: number }> = [];
+  const pctCero = pctOf(cero);
+  const pctRestock = pctOf(restock);
+  const weightCero = Math.max(0, cero.totalInventario ?? 0);
+  const weightRestock = Math.max(0, restock.totalInventario ?? 0);
+  if (pctCero != null && weightCero > 0) {
+    parts.push({ pct: pctCero, weight: weightCero });
+  }
+  if (pctRestock != null && weightRestock > 0) {
+    parts.push({ pct: pctRestock, weight: weightRestock });
+  }
+  const weight = parts.reduce((sum, part) => sum + part.weight, 0);
+  if (weight <= 0) return null;
+  return parts.reduce((sum, part) => sum + part.pct * part.weight, 0) / weight;
 };
 
 /** Señales para saber si la sede “funciona” y qué mejorar. */
@@ -384,7 +402,7 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
       <td style="padding:14px 16px 4px;">
         <div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:4px;">2 · Gestión (qué mejorar)</div>
         <div style="font-size:11px;color:#64748b;margin-bottom:8px;">
-          Sin ver = ceros aún sin revisar. % surtido 0/S = avance del admin. % pond. = promedio de 0 y S ponderado por ítems.
+          Sin ver = ceros aún sin revisar. % surtido 0/S = avance del admin. % pond. = (% 0 × inventario 0 + % S × inventario S) ÷ inventario 0+S.
         </div>
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
           <thead>
