@@ -442,6 +442,50 @@ trap cleanup EXIT
 
 CANARY_EMPTY=()
 WARN=0
+INCOMPLETOS_OMITIDOS=()
+
+# ── Dias INCOMPLETOS: cargados con inventario pero sin una sola venta ─────────
+# El ETL de rotacion (v3, fuera de este repo) escribe la foto de inventario aunque el POS
+# no haya cerrado el dia, y avisa con exit 3 diciendo textualmente "re-correr ANTES de que
+# el sync lo suba a GCP". Nada impedia que el sync lo subiera igual 20 minutos despues.
+# Paso 4 dias seguidos (18, 19, 20 y 21 de agosto de 2026). El del 18 inflo el DIC medio
+# global un 4,6% y marco 115 items como "sin venta" sin serlo.
+#
+# NO se consulta una tabla de control porque no existe una comun: cada ETL deja su marca
+# a su manera y el de rotacion vive fuera del repo. La senal se lee de los propios datos y
+# es inequivoca: una (empresa, fecha) con filas cargadas y cantidad_vendida = 0 no es un
+# dia flojo, es un dia que el POS aun no habia cerrado. Un dia flojo de verdad si tiene
+# ventas: el 2026-08-07, el peor medido, trajo 43.716 lineas en mercamio.
+declare -A INCOMPLETE_CHECK
+INCOMPLETE_CHECK[rotacion_base_item_dia_sede]="empresa|fecha_dia|cantidad_vendida"
+
+# Lista las (empresa, fecha) incompletas de la ventana, una por linea, separadas por '|'.
+dias_incompletos() {
+  local tbl="$1" spec="${INCOMPLETE_CHECK[$1]:-}" col_emp col_fec col_val
+  [[ -n "$spec" ]] || return 0
+  IFS='|' read -r col_emp col_fec col_val <<< "$spec"
+  "${SRC_PSQL[@]}" -tA -F'|' -c "
+    SELECT $col_emp, $col_fec
+    FROM public.$tbl
+    WHERE $(build_where "$tbl")
+    GROUP BY 1, 2
+    HAVING count(*) > 0 AND COALESCE(sum($col_val), 0) = 0
+    ORDER BY 2, 1;" 2>/dev/null
+}
+
+# Filtro SQL que EXCLUYE esas combinaciones del COPY. Cadena vacia si no hay ninguna,
+# de modo que el camino feliz no cambia ni una coma.
+filtro_sin_incompletos() {
+  local tbl="$1" spec="${INCOMPLETE_CHECK[$1]:-}" col_emp col_fec emp fec extra=""
+  [[ -n "$spec" ]] || { printf ''; return 0; }
+  IFS='|' read -r col_emp col_fec _ <<< "$spec"
+  while IFS='|' read -r emp fec; do
+    [[ -z "${emp:-}" ]] && continue
+    extra+=" AND NOT ($col_emp = '$emp' AND $col_fec = '$fec')"
+    INCOMPLETOS_OMITIDOS+=("$tbl:$emp@$fec")
+  done < <(dias_incompletos "$tbl")
+  printf '%s' "$extra"
+}
 
 process_table() {
   local tbl="$1" where cols keylist conflict setclause drop_stmt on_conflict tmp cnt _ec mode datecol
@@ -476,8 +520,20 @@ process_table() {
     log "[$tbl] --replace ignorado: es un catalogo sin columna de fecha (se sube completo por upsert)"
   fi
 
+  # Excluye del COPY las (empresa, fecha) que el local tiene a medias. Se calcula aqui,
+  # justo antes de leer, para que el aviso salga con la fila exacta que se omite.
+  local skip_sql; skip_sql="$(filtro_sin_incompletos "$tbl")"
+  if [[ -n "$skip_sql" ]]; then
+    local om
+    for om in "${INCOMPLETOS_OMITIDOS[@]}"; do
+      [[ "$om" == "$tbl:"* ]] && log "[$tbl] OMITIDO ${om#*:}: cargado sin una sola venta; el POS no habia cerrado el dia. NO se sube a GCP."
+    done
+    log "[$tbl] re-corre el ETL de esa fecha y vuelve a lanzar el sync cuando el POS tenga el dia."
+    WARN=1
+  fi
+
   tmp="$(mktemp "${TMPDIR:-/tmp}/etl_${tbl}_XXXXXX.csv")"; TMPFILES+=("$tmp")
-  "${SRC_PSQL[@]}" -c "COPY (SELECT $cols FROM public.$tbl WHERE $where) TO STDOUT WITH (FORMAT csv)" > "$tmp"
+  "${SRC_PSQL[@]}" -c "COPY (SELECT $cols FROM public.$tbl WHERE $where$skip_sql) TO STDOUT WITH (FORMAT csv)" > "$tmp"
 
   # Modo "replace": reemplaza en GCP SOLO las fechas presentes en el local (via staging), no toda
   # la ventana -> nunca borra dias que el local no tenga (seguro para corridas parciales/automaticas).
@@ -499,6 +555,14 @@ SQL
     rm -f "$tmp"
     log "[$tbl] snapshot OK ($cnt filas; reemplazo completo en GCP)"
     return 0
+  fi
+
+  # Si se omitio alguna empresa por dia incompleto, NO se puede usar replace: su DELETE
+  # borra por FECHA, no por (empresa, fecha), asi que se llevaria por delante la empresa
+  # omitida aunque en GCP estuviera correcta de una carga anterior. El upsert no borra.
+  if [[ "$mode" == "replace" && -n "$skip_sql" ]]; then
+    log "[$tbl] replace -> upsert por esta corrida: hay una empresa omitida y el DELETE por fecha borraria su dato bueno en GCP."
+    mode="upsert"
   fi
 
   if [[ "$mode" == "replace" ]]; then
