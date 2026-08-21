@@ -65,6 +65,45 @@ describe("proveedores visitas-scope", () => {
     );
   });
 
+  it("si el API trae otras sedes, Floresta no las pinta ni las cuenta", () => {
+    const rows = [
+      row({
+        id: 1,
+        sedeName: "Bogota",
+        entradaAt: "2026-08-20T15:00:00.000Z",
+        visitanteCedula: "1",
+      }),
+      row({
+        id: 2,
+        sedeName: "Floresta",
+        entradaAt: "2026-08-20T16:00:00.000Z",
+        visitanteCedula: "2",
+      }),
+      row({
+        id: 3,
+        sedeName: "Chia",
+        entradaAt: "2026-08-20T17:00:00.000Z",
+        visitanteCedula: "3",
+      }),
+    ];
+    const mixed = metricsFromVisitaRows(rows);
+    assert.equal(mixed.totalVisitas, 3);
+    const view = resolveVisitasBoardView({
+      rows,
+      metrics: mixed,
+      dateStart: "2026-08-20",
+      dateEnd: "2026-08-20",
+      sedeName: "Floresta",
+    });
+    assert.equal(view.rows.length, 1);
+    assert.equal(view.rows[0]?.sedeName, "Floresta");
+    assert.equal(view.metrics?.totalVisitas, 1);
+    assert.deepEqual(
+      view.metrics?.bySede.map((s) => s.sedeName),
+      ["Floresta"],
+    );
+  });
+
   it("si el API trae visitas de otros días, el tablero cuenta solo el rango", () => {
     const rows = [
       row({

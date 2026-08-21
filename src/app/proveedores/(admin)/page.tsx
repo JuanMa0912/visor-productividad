@@ -6,7 +6,7 @@ import { Download, Truck } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { canAccessProveedoresBoard, canViewProveedoresQrLinks } from "@/lib/shared/special-role-features";
-import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
+import { isProveedoresQrSede, PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import type {
   ProveedorVisitaRow,
   ProveedorVisitasMetrics,
@@ -60,6 +60,18 @@ const formatMin = (value: number | null | undefined) =>
 
 type QrLink = { sedeName: string; url: string; path: string; activo: boolean };
 
+const SEDE_STORAGE_KEY = "vp-proveedores-visitas-sede";
+
+const readStoredSede = () => {
+  if (typeof window === "undefined") return "";
+  try {
+    const saved = sessionStorage.getItem(SEDE_STORAGE_KEY);
+    return saved && isProveedoresQrSede(saved) ? saved : "";
+  } catch {
+    return "";
+  }
+};
+
 const MetricCard = ({
   label,
   value,
@@ -94,7 +106,7 @@ export default function ProveedoresBoardPage() {
   const canViewQr = canViewProveedoresQrLinks(user?.specialRoles, isAdmin);
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
-  const [sede, setSede] = useState("");
+  const [sede, setSede] = useState(readStoredSede);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +127,25 @@ export default function ProveedoresBoardPage() {
       router.replace("/secciones");
     }
   }, [status, canAccessBoard, router]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || sede) return;
+    if (user?.sede && isProveedoresQrSede(user.sede)) {
+      setSede(user.sede);
+    }
+  }, [sede, status, user?.sede]);
+
+  useEffect(() => {
+    try {
+      if (sede && isProveedoresQrSede(sede)) {
+        sessionStorage.setItem(SEDE_STORAGE_KEY, sede);
+      } else {
+        sessionStorage.removeItem(SEDE_STORAGE_KEY);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [sede]);
 
   const loadMeta = useCallback(async () => {
     try {
@@ -446,7 +477,7 @@ export default function ProveedoresBoardPage() {
                 onChange={(e) => setSede(e.target.value)}
                 className="mt-1 block h-9 min-w-40 rounded-lg border border-slate-200 px-3 text-sm"
               >
-                <option value="">Todas</option>
+                <option value="">Todas las sedes</option>
                 {PROVEEDORES_QR_SEDES.map((name) => (
                   <option key={name} value={name}>
                     {name}
@@ -493,11 +524,18 @@ export default function ProveedoresBoardPage() {
                   {" "}
                   en{" "}
                   <span className="font-semibold text-slate-700">{sede}</span>
+                  . El detalle solo lista esa sede.
                 </>
               ) : (
-                " en todas las sedes"
+                <>
+                  {" "}
+                  en{" "}
+                  <span className="font-semibold text-amber-800">
+                    todas las sedes
+                  </span>
+                  , no en una sola. Elige Floresta (u otra) para ver solo esa.
+                </>
               )}
-              .
             </p>
           ) : null}
         </section>

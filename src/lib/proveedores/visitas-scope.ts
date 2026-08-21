@@ -164,6 +164,10 @@ export const resolveVisitasBoardView = ({
     rowMatchesVisitasScope(row, { dateStart, dateEnd, sedeName }),
   );
   const truncated = rows.length >= VISITAS_LIST_LIMIT;
+  const sede = (sedeName ?? "").trim();
+  if (sede && !truncated) {
+    return { rows: scoped, metrics: metricsFromVisitaRows(scoped) };
+  }
   if (!truncated && metrics && scoped.length !== metrics.totalVisitas) {
     return { rows: scoped, metrics: metricsFromVisitaRows(scoped) };
   }
