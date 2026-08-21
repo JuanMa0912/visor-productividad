@@ -94,7 +94,7 @@ export default function ProveedoresBoardPage() {
   const [metrics, setMetrics] = useState<ProveedorVisitasMetrics | null>(null);
   const [qrLinks, setQrLinks] = useState<QrLink[]>([]);
   const [tab, setTab] = useState<
-    "visitas" | "ventas" | "productividad" | "inasistencia" | "oipv"
+    "visitas" | "qr" | "ventas" | "productividad" | "inasistencia" | "oipv"
   >("visitas");
   const [linea, setLinea] = useState<ProveedorLineaFilter>("todas");
   const [lastDataDate, setLastDataDate] = useState<string | null>(null);
@@ -218,10 +218,10 @@ export default function ProveedoresBoardPage() {
               Proveedores
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-              QR de asistencia (entrada/salida por sede), ventas por proveedor,
-              inasistencia (personas = und÷350÷7) y productividad por familia:
-              unidades (industria), kilos (fruver y carnes) y transacciones
-              (cajas). Fechas ancladas al último día con datos.
+              Asistencia (entrada/salida por sede), códigos QR, ventas por
+              proveedor, inasistencia (personas = und÷350÷7) y productividad
+              por familia: unidades (industria), kilos (fruver y carnes) y
+              transacciones (cajas). Fechas ancladas al último día con datos.
             </p>
           </div>
         </div>
@@ -237,8 +237,21 @@ export default function ProveedoresBoardPage() {
                 : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
             }`}
           >
-            QR asistencia
+            Asistencia
           </button>
+          {canViewQr ? (
+            <button
+              type="button"
+              onClick={() => setTab("qr")}
+              className={`rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wide ${
+                tab === "qr"
+                  ? "bg-sky-700 text-white"
+                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              QR
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setTab("ventas")}
@@ -286,7 +299,12 @@ export default function ProveedoresBoardPage() {
             </button>
           ) : null}
           </div>
-          <ProveedoresLineaFilter value={linea} onChange={setLinea} />
+          {tab === "ventas" ||
+          tab === "productividad" ||
+          tab === "inasistencia" ||
+          tab === "oipv" ? (
+            <ProveedoresLineaFilter value={linea} onChange={setLinea} />
+          ) : null}
         </div>
 
         {tab === "ventas" ? <ProveedoresVentasPanel linea={linea} /> : null}
@@ -303,37 +321,40 @@ export default function ProveedoresBoardPage() {
           <ProveedoresOipvPanel linea={linea} lastDataDate={lastDataDate} />
         ) : null}
 
-        {tab === "visitas" ? (
-          <>
-        {canViewQr && qrLinks.length > 0 ? (
-          <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-bold text-slate-900">
-              QR asistencia proveedores
-            </h2>
-            <p className="mt-1 text-[11px] text-slate-500">
-              Un código por sede. El visitante escanea, registra entrada y
-              salida. Los códigos se generan aquí (sin servicios externos) y no
-              caducan.
-            </p>
-            <ul className="mt-3 space-y-1 text-xs">
-              {qrLinks.map((link) => (
-                <ProveedorSedeQr
-                  key={link.sedeName}
-                  sedeName={link.sedeName}
-                  url={link.url}
-                  path={link.path}
-                  activo={link.activo}
-                />
-              ))}
-            </ul>
-          </section>
-        ) : canViewQr ? (
-          <section className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            No hay tokens QR de sede. Un admin debe generarlos en esta pestaña
-            (migración / seed de <span className="font-mono text-xs">proveedor_sede_qr</span>).
-          </section>
+        {tab === "qr" && canViewQr ? (
+          qrLinks.length > 0 ? (
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h2 className="text-sm font-bold text-slate-900">
+                Códigos QR por sede
+              </h2>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Un código por sede. El visitante escanea, registra entrada y
+                salida. Los códigos se generan aquí (sin servicios externos) y
+                no caducan.
+              </p>
+              <ul className="mt-3 space-y-1 text-xs">
+                {qrLinks.map((link) => (
+                  <ProveedorSedeQr
+                    key={link.sedeName}
+                    sedeName={link.sedeName}
+                    url={link.url}
+                    path={link.path}
+                    activo={link.activo}
+                  />
+                ))}
+              </ul>
+            </section>
+          ) : (
+            <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              No hay tokens QR de sede. Un admin debe generarlos en esta pestaña
+              (migración / seed de{" "}
+              <span className="font-mono text-xs">proveedor_sede_qr</span>).
+            </section>
+          )
         ) : null}
 
+        {tab === "visitas" ? (
+          <>
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-end gap-3">
             <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">

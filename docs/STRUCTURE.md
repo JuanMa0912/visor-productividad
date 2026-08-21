@@ -93,7 +93,7 @@ Codigo compartido sin UI de pagina.
 | `inventario/` | inventario por item y presets |
 | `analisis-inventario/` | días de inventario (DI und/valor), drill y heatmap |
 | `participacion-comercial/` | mix/participación sede↔línea por almacén |
-| `proveedores/` | visitas QR (`qr_*` por sede), ventas, inasistencia (personas = und÷350÷7), productividad und/kg/tx, OIPV asistencia (admin); filtro de línea industria/fruver/carnes; fechas ancladas al último día con datos |
+| `proveedores/` | visitas QR (`qr_*` por sede; UI: pestaña Asistencia + pestaña QR), ventas, inasistencia (personas = und÷350÷7), productividad und/kg/tx, OIPV asistencia (admin); filtro de línea industria/fruver/carnes; fechas ancladas al último día con datos |
 | `productivity/` | ventana de fechas, cache disco y volumen de tarjetas Mix y Línea (`tx`/`und`/`kg`/`UND.Pollo`) |
 | `checklists/` | catálogo (bodega + punto de venta); 20 min; 1 vez al mes por sede; roles encargado/revisor/panel; cruce revisor vs encargado |
 | `excel-dian/` | conexiones por empresa, consulta y flag publico de exportacion |
@@ -143,7 +143,7 @@ Codigo compartido sin UI de pagina.
 | `costos` | tablero `/costos` (subtablero opt-in `precios-proveedor`; `/exp/precios-proveedor` redirige): heatmap ítem×sede; **costo de entrada = inventario ET/EF** (`cmmovimiento_inventario` en 217 → `orden_compra_linea` / `rotacion_salidas_dia`; si no hay ET/EF ese día, FR/OC); Mercatodo: ET tránsito + EF; precio venta no se toca; doble clic: $/kg, kilos y margen vendido; filtros multi-select (checks): empresa, sede (al menos una), línea, sublínea, ítem y proveedor; proveedor sin prefijo de empresa (Bogotá/Mercamio/Mercatodo); al expandir, el mismo nombre se agrupa en una fila y suma el costo; máx. 14 días |
 | `ordenes-compra` | tablero opt-in (`ordenes-compra` en `allowed_subdashboards`): OC incremental (pendiente/incompleta/vencida SLA 7d/cumplida); diario 08:00 dias nuevos + abiertas; cumplimiento `diaDesde`–`diaHasta` (día del documento, vencidas fuera; cerradas 100% + abiertas/incompletas por qty) |
 | `proveedores/ingreso` | público: meta/catálogo (`proveedor_tercero` filtrado por empresa de la sede del QR) + lookup/entrada/salida; entrada exige autorización habeas data (`autorizacionDatos`) |
-| `proveedores/visitas` | subtablero `proveedores`: QR asistencia (entrada/salida en tablas `qr_*` por sede) + listado/filtros/CSV + métricas; `mode=meta` con links QR solo si `proveedores_qr` (o admin; PNG en cliente) |
+| `proveedores/visitas` | subtablero `proveedores`: pestaña **Asistencia** (entrada/salida en `qr_*`, listado/filtros/CSV + métricas) y pestaña **QR** (links/PNG; solo `proveedores_qr` o admin); `mode=meta` con links QR |
 | `proveedores/ventas` | subtablero `proveedores`: por defecto último día con datos (`ventas_proveedor_dia`); filtro `linea=industria\|fruver\|carnes` vía `margen_item_dia_roll`; inasistencia = und÷350÷7 (personas) |
 | `proveedores/productividad` | subtablero `proveedores`: `mode=board` (KPIs/sede/día + volumen÷horas pagadas, cache 45s) + `mode=proveedores` (ranking); industria=und, fruver/carnes=kg, cajas=tx; máx. 31 días |
 | `proveedores/oipv` | **solo admin**: cruce QR L–D + ventas + COGS mercancía (`margen_item_dia_roll` vía `proveedor_item`; no es cobro OIPV); columna **HL** = unidades ÷ 350; filtro `all|con_visita|visita_sin_venta|venta_sin_visita` |
