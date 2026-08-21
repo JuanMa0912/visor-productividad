@@ -483,27 +483,12 @@ export default function CostosPage() {
     if (!data.meta) throw new Error("Meta vacía");
     const start = data.meta.defaultStart;
     const end = data.meta.defaultEnd;
-    const sedeKeys = data.meta.sedes.map((sede) => sede.key);
     setMeta(data.meta);
     setDateStart(start);
     setDateEnd(end);
     setSelectedEmpresas([]);
     setSelectedSedes([]);
-    setFiltrosAplicados(
-      JSON.stringify({
-        dateStart: start,
-        dateEnd: end,
-        selectedEmpresas: [],
-        selectedSedes: [],
-        selectedLineas: [],
-        selectedSublineas: [],
-        selectedItems: [],
-        selectedProveedores: [],
-        selectedMarcas: [],
-      }),
-    );
-    void loadMatrix({ from: start, to: end, sedes: sedeKeys });
-  }, [loadMatrix]);
+  }, []);
 
   useEffect(() => {
     if (status !== "authenticated" || !user) return;
@@ -521,12 +506,8 @@ export default function CostosPage() {
           : "Error meta",
       );
     });
-    // Solo al autenticar: la recarga por filtros va en el efecto de abajo.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/auth gate
   }, [status, canAccess]);
-
-  // Ya no se consulta en cada clic: la consulta la dispara "Actualizar". Ver
-  // aplicarFiltros mas abajo.
 
   useEffect(() => {
     const q = itemQuery.trim();
@@ -672,6 +653,19 @@ export default function CostosPage() {
     setFiltrosAplicados(filtrosActuales);
     void loadMatrix();
   }, [filtrosActuales, loadMatrix, puedeConsultar]);
+
+  const liveFilterKey = `${dateStart}|${dateEnd}|${selectedEmpresas.join(",")}|${selectedSedes.join(",")}|${selectedLineas.join(",")}|${selectedSublineas.join(",")}`;
+
+  useEffect(() => {
+    if (!meta || !dateStart || !dateEnd) return;
+    const timer = window.setTimeout(() => {
+      setFiltrosAplicados(filtrosActuales);
+      void loadMatrix();
+    }, 150);
+    return () => window.clearTimeout(timer);
+    // Ítems, proveedor y marca siguen en Actualizar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- live filters only
+  }, [meta, liveFilterKey]);
 
   if (status !== "authenticated" || !user) {
     return (
@@ -1057,7 +1051,7 @@ export default function CostosPage() {
               </span>
             ) : (
               <span className="text-xs text-slate-500">
-                La métrica se elige en las tarjetas de arriba.
+                Fecha, empresa, sede, línea y sublínea se aplican al cambiar.
               </span>
             )}
           </div>
@@ -1066,7 +1060,8 @@ export default function CostosPage() {
               ? "Modo 1 día: precio venta / costo de entrada de ese día."
               : "Modo rango: promedio simple diario de precio venta y costo de entrada."}{" "}
             Marca una o varias opciones en cada lista. Vacío en empresa o sede
-            = todas. En kilos/margen se ve valor por kilo, kilos y margen
+            = todas. Fecha, empresa, sede, línea y sublínea recargan al
+            cambiar. En kilos/margen se ve valor por kilo, kilos y margen
             vendido.
           </p>
         </div>
