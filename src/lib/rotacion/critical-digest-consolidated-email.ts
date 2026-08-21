@@ -37,12 +37,6 @@ const escapeHtml = (value: string) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-const formatScore = (digest: RotacionCriticalDigest): string => {
-  const eff = digest.restockEffectiveness;
-  if (eff.unavailable) return "—";
-  return String(eff.score ?? 0);
-};
-
 /** Criticos D+0+S solo Manufactura (misma regla que el correo individual). */
 export const sedeCriticalBreakdown = (digest: RotacionCriticalDigest) => {
   const section = digest.manufactura;
@@ -75,9 +69,24 @@ export type SedeManagementSignals = {
   sinVerificarCero: number;
   surtidoPctCero: number | null;
   surtidoPctRestock: number | null;
+  /** % surtido 0 y S ponderado por ítems de cada cubo. */
+  surtidoPctPonderado: number | null;
   diasInventarioD: number | null;
   /** Frases cortas de foco para el gerente (máx. 2). */
   focusHints: string[];
+};
+
+/**
+ * Promedio ponderado de % surtido 0 y % surtido S, con peso = ítems de cada cubo.
+ * Equivale a (surtidos 0 + surtidos S) / (ítems 0 + ítems S).
+ */
+export const weightedSurtidoPct = (
+  cero: Pick<SurtidoEstadoBreakdown, "itemCount" | "surtido">,
+  restock: Pick<SurtidoEstadoBreakdown, "itemCount" | "surtido">,
+): number | null => {
+  const n = cero.itemCount + restock.itemCount;
+  if (n <= 0) return null;
+  return ((cero.surtido + restock.surtido) / n) * 100;
 };
 
 /** Señales para saber si la sede “funciona” y qué mejorar. */
@@ -134,6 +143,10 @@ export const buildSedeManagementSignals = (
     sinVerificarCero: breakdown.ceroEstado.sinVerificar,
     surtidoPctCero: breakdown.ceroEstado.surtidoPct,
     surtidoPctRestock: breakdown.restockEstado.surtidoPct,
+    surtidoPctPonderado: weightedSurtidoPct(
+      breakdown.ceroEstado,
+      breakdown.restockEstado,
+    ),
     diasInventarioD,
     focusHints: hints.slice(0, 2),
   };
@@ -211,8 +224,6 @@ const buildOverviewRows = (digests: readonly RotacionCriticalDigest[]) =>
       const breakdown = sedeCriticalBreakdown(digest);
       return `<tr style="background:${bg};">
         ${td(`<strong>${escapeHtml(digest.sedeName)}</strong>`)}
-        ${td(formatScore(digest), "center", "font-weight:800;")}
-        ${td(formatCount(breakdown.itemCount), "right", "font-variant-numeric:tabular-nums;")}
         ${td(
           formatInventario(breakdown.totalInventario),
           "right",
@@ -250,7 +261,7 @@ const buildManagementRows = (digests: readonly RotacionCriticalDigest[]) =>
         ${td(formatCount(signals.sinVerificarCero), "right", "font-variant-numeric:tabular-nums;")}
         ${td(formatPct(signals.surtidoPctCero), "right", "font-variant-numeric:tabular-nums;")}
         ${td(formatPct(signals.surtidoPctRestock), "right", "font-variant-numeric:tabular-nums;color:#0e7490;")}
-        ${td(formatDiasInventario(signals.diasInventarioD), "right", "font-variant-numeric:tabular-nums;")}
+        ${td(formatPct(signals.surtidoPctPonderado), "right", "font-variant-numeric:tabular-nums;font-weight:700;")}
         ${td(`<span style="font-size:11px;line-height:1.35;color:#334155;">${focusHtml}</span>`, "left")}
       </tr>`;
     })
@@ -332,7 +343,7 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
               <span style="color:#64748b;">· Solo <strong>${familyLabel}</strong> (líneas N1 distintas de 01–04 y 12).</span><br/>
               <span style="color:#64748b;">· <strong>Restock alto</strong> = lo marcado surtido sí está vendiendo.</span><br/>
               <span style="color:#64748b;">· <strong>Inventario / D·0·S</strong> = tamaño del problema crítico en la sede.</span><br/>
-              <span style="color:#64748b;">· <strong>Gestión</strong> = qué falta por hacer (sin verificar, % surtido, DI de demanda).</span>
+              <span style="color:#64748b;">· <strong>Gestión</strong> = qué falta por hacer (sin verificar, % surtido 0/S y ponderado).</span>
             </td>
           </tr>
         </table>
@@ -376,8 +387,6 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
           <thead>
             <tr style="background:#eff6ff;">
               ${th("Sede")}
-              ${th("Restock", "center")}
-              ${th("Prod.", "right")}
               ${th("Inventario", "right")}
               ${th("D", "right")}
               ${th("0", "right")}
@@ -388,8 +397,6 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
             ${buildOverviewRows(digests)}
             <tr style="background:#dbeafe;">
               ${td("<strong>Total</strong>")}
-              ${td(scoreLabel, "center", "font-weight:800;")}
-              ${td(`<strong>${formatCount(totals.itemCount)}</strong>`, "right")}
               ${td(
                 `<strong>${formatInventario(totals.totalInventario)}</strong>`,
                 "right",
@@ -408,7 +415,7 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
       <td style="padding:14px 16px 4px;">
         <div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:4px;">2 · Gestión (qué mejorar)</div>
         <div style="font-size:11px;color:#64748b;margin-bottom:8px;">
-          Sin ver = ceros aún sin revisar. % surtido 0/S = avance del admin. DI D = días de inventario en Demanda (${familyLabel}).
+          Sin ver = ceros aún sin revisar. % surtido 0/S = avance del admin. % pond. = promedio de 0 y S ponderado por ítems.
         </div>
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
           <thead>
@@ -417,7 +424,7 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
               ${th("Sin ver", "right", "#0e7490", "#a5f3fc")}
               ${th("% surt. 0", "right", "#0e7490", "#a5f3fc")}
               ${th("% surt. S", "right", "#0e7490", "#a5f3fc")}
-              ${th("DI D", "right", "#0e7490", "#a5f3fc")}
+              ${th("% pond.", "right", "#0e7490", "#a5f3fc")}
               ${th("Foco", "left", "#0e7490", "#a5f3fc")}
             </tr>
           </thead>
@@ -479,16 +486,16 @@ export const buildRotacionCriticalDigestConsolidatedText = (
     `Restock cadena: ${scoreLabel} (${formatCount(totals.restockSold)} de ${formatCount(totals.restockMarked)})`,
     `D ${formatCount(totals.demandaD)} · 0 ${formatCount(totals.cero)} · S ${formatCount(totals.restockS)}`,
     "",
-    "1. COMPARATIVO | RESTOCK | PROD | INV | D | 0 | S",
+    "1. COMPARATIVO | INV | D | 0 | S",
     ...digests.map((digest) => {
       const breakdown = sedeCriticalBreakdown(digest);
-      return `${digest.sedeName} | ${formatScore(digest)} | ${formatCount(breakdown.itemCount)} | ${formatInventario(breakdown.totalInventario)} | ${formatCount(breakdown.demandaD)} | ${formatCount(breakdown.cero)} | ${formatCount(breakdown.restockS)}`;
+      return `${digest.sedeName} | ${formatInventario(breakdown.totalInventario)} | ${formatCount(breakdown.demandaD)} | ${formatCount(breakdown.cero)} | ${formatCount(breakdown.restockS)}`;
     }),
     "",
-    "2. GESTIÓN | SIN VER | %SURT 0 | %SURT S | DI D | FOCO",
+    "2. GESTIÓN | SIN VER | %SURT 0 | %SURT S | %POND | FOCO",
     ...digests.map((digest) => {
       const signals = buildSedeManagementSignals(digest);
-      return `${digest.sedeName} | ${formatCount(signals.sinVerificarCero)} | ${formatPct(signals.surtidoPctCero)} | ${formatPct(signals.surtidoPctRestock)} | ${formatDiasInventario(signals.diasInventarioD)} | ${signals.focusHints.join("; ")}`;
+      return `${digest.sedeName} | ${formatCount(signals.sinVerificarCero)} | ${formatPct(signals.surtidoPctCero)} | ${formatPct(signals.surtidoPctRestock)} | ${formatPct(signals.surtidoPctPonderado)} | ${signals.focusHints.join("; ")}`;
     }),
     "",
     `3. ${familyLabel.toUpperCase()} | # | INV | DÍAS INV.`,

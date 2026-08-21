@@ -7,6 +7,7 @@ import {
   buildRotacionCriticalDigestConsolidatedSubject,
   buildRotacionCriticalDigestConsolidatedText,
   buildSedeManagementSignals,
+  weightedSurtidoPct,
 } from "@/lib/rotacion/critical-digest-consolidated-email";
 
 const emptySection = () => ({
@@ -144,6 +145,9 @@ describe("critical-digest-consolidated-email", () => {
     assert.match(html, /Floresta/);
     assert.match(html, /Manufactura/);
     assert.match(html, /Días inv\./);
+    assert.match(html, /% pond\./);
+    assert.doesNotMatch(html, />Prod\.</);
+    assert.doesNotMatch(html, />DI D</);
     assert.doesNotMatch(html, /Perec\./);
     assert.doesNotMatch(html, />Perecederos</);
     assert.match(html, /Total cadena/);
@@ -152,9 +156,12 @@ describe("critical-digest-consolidated-email", () => {
     const text = buildRotacionCriticalDigestConsolidatedText(digests);
     assert.match(text, /TOTAL CADENA MANUFACTURA/);
     assert.match(text, /GESTIÓN/);
+    assert.match(text, /%POND/);
     assert.match(text, /Floresta/);
     assert.match(text, /Calle 5ta/);
     assert.doesNotMatch(text, /\| P /);
+    assert.doesNotMatch(text, /RESTOCK \| PROD/);
+    assert.doesNotMatch(text, /DI D/);
   });
 
   it("genera focos de gestión cuando hay alertas", () => {
@@ -199,5 +206,52 @@ describe("critical-digest-consolidated-email", () => {
       signals.focusHints.some((hint) => /Restock|cero|DI|Demanda/i.test(hint)),
     );
     assert.equal(signals.sinVerificarCero, 3);
+  });
+
+  it("pondera % surtido 0 y S por cantidad de ítems", () => {
+    assert.equal(
+      weightedSurtidoPct(
+        { itemCount: 4, surtido: 1 },
+        { itemCount: 1, surtido: 1 },
+      ),
+      40,
+    );
+    assert.equal(
+      weightedSurtidoPct(
+        { itemCount: 0, surtido: 0 },
+        { itemCount: 0, surtido: 0 },
+      ),
+      null,
+    );
+
+    const digest = digestFor({
+      sedeName: "Floresta",
+      sedeId: "001",
+      manufactura: {
+        ...emptySection(),
+        total: { itemCount: 5, totalInventario: 500_000 },
+        demandaD: { itemCount: 2, totalInventario: 200_000, diasInventario: 10 },
+        ceroRotacion: {
+          itemCount: 4,
+          totalInventario: 0,
+          sinVerificar: 2,
+          seguimiento: 1,
+          surtido: 1,
+          surtidoPct: 25,
+        },
+        restockS: {
+          itemCount: 1,
+          totalInventario: 0,
+          sinVerificar: 0,
+          seguimiento: 0,
+          surtido: 1,
+          surtidoPct: 100,
+        },
+      },
+    });
+    const signals = buildSedeManagementSignals(digest);
+    assert.equal(signals.surtidoPctCero, 25);
+    assert.equal(signals.surtidoPctRestock, 100);
+    assert.equal(signals.surtidoPctPonderado, 40);
   });
 });
