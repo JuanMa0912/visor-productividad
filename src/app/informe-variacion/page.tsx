@@ -22,10 +22,12 @@ import {
 } from "@/lib/shared/data-tenant";
 import {
   alignPreviousYearRange,
+  alignRankingPreviousRange,
   compactToIso,
   defaultInformeMonthToDateRanges,
   defaultInformeYtdRanges,
   isoToCompact,
+  type InformeCompareMode,
   type InformeSelectedRanges,
 } from "@/lib/informe-variacion/date-range";
 import {
@@ -224,6 +226,8 @@ export default function InformeVariacionPage() {
   );
   const [rankingApplied, setRankingApplied] =
     useState<InformeSelectedRanges | null>(null);
+  const [rankingCompareMode, setRankingCompareMode] =
+    useState<InformeCompareMode>("yoy");
   const [payload, setPayload] = useState<InformeVariacionPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -647,6 +651,35 @@ export default function InformeVariacionPage() {
     setApplied(next);
   };
 
+  const alignRankingDraft = (
+    currentFrom: string,
+    currentTo: string,
+    mode: InformeCompareMode,
+    fallback: InformeSelectedRanges,
+  ): InformeSelectedRanges => {
+    const aligned = alignRankingPreviousRange(currentFrom, currentTo, mode);
+    if (!aligned) return fallback;
+    return {
+      currentFrom,
+      currentTo,
+      previousFrom: aligned.previousFrom,
+      previousTo: aligned.previousTo,
+    };
+  };
+
+  const applyRankingCompareMode = (mode: InformeCompareMode) => {
+    setRankingCompareMode(mode);
+    if (!rankingDraft) return;
+    const next = alignRankingDraft(
+      rankingDraft.currentFrom,
+      rankingDraft.currentTo,
+      mode,
+      rankingDraft,
+    );
+    setRankingDraft(next);
+    setRankingApplied(next);
+  };
+
   const updateDraftDate = (
     field: keyof InformeSelectedRanges,
     iso: string,
@@ -844,9 +877,36 @@ export default function InformeVariacionPage() {
           ) : boardTab === "ranking" ? (
             <>
               <p className="mb-3 text-xs text-slate-500">
-                Elige un periodo para el ranking. La variación usa el mismo
-                tramo del año anterior.
+                Elige un periodo para el ranking. YoY usa el mismo tramo del
+                año anterior; MoM, el del mes anterior.
               </p>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Comparar contra
+                </span>
+                <span className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+                  {(
+                    [
+                      { id: "mom", label: "MoM" },
+                      { id: "yoy", label: "YoY" },
+                    ] as const
+                  ).map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => applyRankingCompareMode(option.id)}
+                      className={cn(
+                        "px-3 py-1 text-xs font-semibold",
+                        rankingCompareMode === option.id
+                          ? "bg-blue-600 text-white"
+                          : "bg-white text-slate-500",
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </span>
+              </div>
               <div className="flex flex-wrap items-end gap-4">
                 <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
                   Desde
@@ -861,15 +921,14 @@ export default function InformeVariacionPage() {
                     onChange={(event) => {
                       const compact = isoToCompact(event.target.value);
                       if (!compact || !rankingDraft) return;
-                      const aligned =
-                        alignPreviousYearRange(compact, rankingDraft.currentTo) ??
-                        rankingDraft;
-                      setRankingDraft({
-                        ...rankingDraft,
-                        currentFrom: compact,
-                        previousFrom: aligned.previousFrom,
-                        previousTo: aligned.previousTo,
-                      });
+                      setRankingDraft(
+                        alignRankingDraft(
+                          compact,
+                          rankingDraft.currentTo,
+                          rankingCompareMode,
+                          rankingDraft,
+                        ),
+                      );
                     }}
                     className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:bg-slate-100"
                   />
@@ -887,17 +946,14 @@ export default function InformeVariacionPage() {
                     onChange={(event) => {
                       const compact = isoToCompact(event.target.value);
                       if (!compact || !rankingDraft) return;
-                      const aligned =
-                        alignPreviousYearRange(
+                      setRankingDraft(
+                        alignRankingDraft(
                           rankingDraft.currentFrom,
                           compact,
-                        ) ?? rankingDraft;
-                      setRankingDraft({
-                        ...rankingDraft,
-                        currentTo: compact,
-                        previousFrom: aligned.previousFrom,
-                        previousTo: aligned.previousTo,
-                      });
+                          rankingCompareMode,
+                          rankingDraft,
+                        ),
+                      );
                     }}
                     className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 disabled:bg-slate-100"
                   />
@@ -1054,6 +1110,8 @@ export default function InformeVariacionPage() {
             lineScopeLocked={Boolean(
               lineCategoryScope.forcedMargenLineas?.length,
             )}
+            rankingCompareMode={rankingCompareMode}
+            onRankingCompareModeChange={applyRankingCompareMode}
           />
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white/80 px-6 py-10 text-center text-sm text-slate-600">

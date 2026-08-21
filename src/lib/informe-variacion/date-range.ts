@@ -266,6 +266,42 @@ export const alignPreviousYearRange = (
   return { previousFrom, previousTo };
 };
 
+/** Mismo dia un mes atras; si el mes destino es mas corto, cae al ultimo dia. */
+export const shiftCompactDateMonths = (
+  compact: string,
+  monthDelta: number,
+): string | null => {
+  const parts = parseCompactDateParts(compact);
+  if (!parts) return null;
+  const anchor = new Date(Date.UTC(parts.year, parts.month - 1 + monthDelta, 1));
+  const year = anchor.getUTCFullYear();
+  const month = anchor.getUTCMonth() + 1;
+  if (year < 2000 || year > 2100) return null;
+  const day = Math.min(parts.day, lastDayOfMonth(year, month));
+  return toCompactDate(year, month, day);
+};
+
+export const alignPreviousMonthRange = (
+  currentFrom: string,
+  currentTo: string,
+): { previousFrom: string; previousTo: string } | null => {
+  const previousFrom = shiftCompactDateMonths(currentFrom, -1);
+  const previousTo = shiftCompactDateMonths(currentTo, -1);
+  if (!previousFrom || !previousTo) return null;
+  return { previousFrom, previousTo };
+};
+
+export type InformeCompareMode = "yoy" | "mom";
+
+export const alignRankingPreviousRange = (
+  currentFrom: string,
+  currentTo: string,
+  mode: InformeCompareMode,
+): { previousFrom: string; previousTo: string } | null =>
+  mode === "mom"
+    ? alignPreviousMonthRange(currentFrom, currentTo)
+    : alignPreviousYearRange(currentFrom, currentTo);
+
 export const informeRangeCacheKey = (ranges: InformeSelectedRanges): string =>
   `r:${ranges.currentFrom}:${ranges.currentTo}:${ranges.previousFrom}:${ranges.previousTo}`;
 

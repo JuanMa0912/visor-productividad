@@ -31,6 +31,7 @@ import {
   type InformeMetric,
   type InformeVariacionPayload,
 } from "@/lib/informe-variacion/types";
+import type { InformeCompareMode } from "@/lib/informe-variacion/date-range";
 import { stripInformeSedeDisplayName } from "@/lib/informe-variacion/labels";
 import { cn } from "@/lib/shared/utils";
 import { VariationChip } from "@/app/informe-variacion/informe-variacion-chips";
@@ -61,6 +62,8 @@ type Props = {
   lineScopeLocked?: boolean;
   boardTab: InformeBoardTab;
   compareMode?: "yoy" | "mom";
+  rankingCompareMode?: InformeCompareMode;
+  onRankingCompareModeChange?: (mode: InformeCompareMode) => void;
 };
 
 const EMP_DOT_CLASS: Record<string, string> = {
@@ -82,6 +85,8 @@ function InformeVariacionBoardReady({
   lineScopeLocked = false,
   boardTab,
   compareMode: compareModeProp,
+  rankingCompareMode,
+  onRankingCompareModeChange,
 }: Props & { prepared: Prepared }) {
   const [kpiMetric, setKpiMetric] = useState<InformeMetric>("v");
   const [sedeMetric, setSedeMetric] = useState<InformeMetric>("v");
@@ -330,7 +335,7 @@ function InformeVariacionBoardReady({
           porcentajes y heatmaps quedaran vacios hasta que existan bases en la base de datos.
         </div>
       ) : null}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs text-slate-600">
           Periodo actual:{" "}
           <b className="text-slate-900">
@@ -351,6 +356,23 @@ function InformeVariacionBoardReady({
             )}
           </b>
         </span>
+        {boardTab === "ranking" && rankingCompareMode && onRankingCompareModeChange ? (
+          <span className="inline-flex items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Comparar contra
+            </span>
+            <ToggleGroup
+              value={rankingCompareMode}
+              options={[
+                { id: "mom", label: "MoM" },
+                { id: "yoy", label: "YoY" },
+              ]}
+              onChange={(value) =>
+                onRankingCompareModeChange(value as InformeCompareMode)
+              }
+            />
+          </span>
+        ) : null}
       </div>
 
       <InformeFilters

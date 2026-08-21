@@ -1,12 +1,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  alignPreviousMonthRange,
   alignPreviousYearRange,
+  alignRankingPreviousRange,
   compactToIso,
   daysInclusiveInRange,
   defaultInformeYtdRanges,
   formatInformeRangeLabel,
   isoToCompact,
+  shiftCompactDateMonths,
   shiftCompactDateYears,
   splitInformeRangeForQuery,
   validateInformeSelectedRanges,
@@ -101,6 +104,27 @@ describe("helpers de fecha", () => {
       previousFrom: "20250101",
       previousTo: "20250818",
     });
+  });
+
+  it("alinea el tramo al mes anterior y recorta dias que no existen", () => {
+    assert.equal(shiftCompactDateMonths("20260331", -1), "20260228");
+    assert.equal(shiftCompactDateMonths("20260115", -1), "20251215");
+    assert.deepEqual(alignPreviousMonthRange("20260801", "20260819"), {
+      previousFrom: "20260701",
+      previousTo: "20260719",
+    });
+    assert.deepEqual(alignPreviousMonthRange("20260301", "20260331"), {
+      previousFrom: "20260201",
+      previousTo: "20260228",
+    });
+    assert.deepEqual(
+      alignRankingPreviousRange("20260801", "20260819", "yoy"),
+      { previousFrom: "20250801", previousTo: "20250819" },
+    );
+    assert.deepEqual(
+      alignRankingPreviousRange("20260801", "20260819", "mom"),
+      { previousFrom: "20260701", previousTo: "20260719" },
+    );
   });
 
   it("etiqueta rangos multi-mes", () => {
