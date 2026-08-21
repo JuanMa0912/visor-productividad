@@ -14,22 +14,35 @@ Migracion: [`db/migrations/20260805_ventas_proveedor.sql`](../../../db/migration
 
 | Unidad | Cuando | Que hace |
 |---|---|---|
-| `visor-etl-proveedores.timer` | **Lun-Vie 07:12** | carga **ayer** + refresca catalogo de criterios + `proveedor_tercero` |
-| `visor-etl-proveedores-reconcile.timer` | **Sab y Dom 07:12** | `--days 7` + refresco de `proveedor_tercero` |
+| `visor-etl-proveedores.timer` | **Lun-Vie 07:45** | carga **ayer** + refresca catalogo de criterios + `proveedor_tercero` |
+| `visor-etl-proveedores-reconcile.timer` | **Sab y Dom 07:45** | `--days 7` + refresco de `proveedor_tercero` |
 
-Las 07:12 caen despues de `visor-etl-ventas-item` (07:09, ~1,5 min) y antes del sync a GCP
-(07:35). El orden importa: `--reconciliar` compara contra `ventas_item_diario`, asi que ese
-ETL tiene que haber cargado el dia primero.
+El orden importa por DOS razones: `--reconciliar` compara contra `ventas_item_diario` (07:09),
+y sobre todo el paso de inventario lee `rotacion_base_item_dia_sede`, que la escriben tres
+timers independientes arrancando a las 07:00.
 
 Cadena de la manana:
 
 | hora | proceso |
 |---|---|
-| 07:00 | `etl-rotacion@{mercamio,mtodo,bogota}` |
+| 07:00 | `etl-rotacion@{mercamio,mtodo,bogota}` — **mercamio cierra ~07:25** |
 | 07:07 | `visor-etl-margen` |
 | 07:09 | `visor-etl-ventas-item` |
-| **07:12** | **este ETL** (~10 s) |
-| 07:35 | `visor-etl-sync` -> GCP |
+| 07:20 | `visor-etl-rotacion-dim` |
+| **07:45** | **este ETL** (~10 s) |
+| 08:00 | `visor-etl-orden-compra` |
+
+**Por que 07:45 y no 07:12 (corregido el 2026-08-21).** Estuvo en 07:12 y ahi lee rotacion
+**a medio escribir**: bogota tarda ~3 min y ya esta, pero mercamio tarda ~25 (medido:
+07:00:01 -> 07:25:11 en `/var/log/etl_rotacion/etl_rotacion_v3_20260820.log`). Resultado:
+`inventario_proveedor_dia` perdio empresas enteras en **5 de 8 dias** entre el 15 y el 20 de
+agosto. Los units no se pueden ordenar con `After=` porque son timers separados: la unica
+palanca es la hora. Si algun dia rotacion se pone mas lenta, el ETL ya no destruye nada
+(conserva y avisa con exit 3), pero el dia queda sin cargar hasta la reconciliacion.
+
+Nota: el sync a GCP (`visor-etl-sync`, 07:35) corre **antes** que este ETL. No es un problema:
+sube con `--days 3`, asi que lo que se escriba a las 07:45 lo recoge el sync del dia siguiente,
+y el domingo 16:00 `visor-etl-reconcile --days 7 --replace` cierra cualquier resto.
 
 ## Uso manual
 
