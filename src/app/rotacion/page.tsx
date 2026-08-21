@@ -22,6 +22,7 @@ import {
   Table2,
   Mail,
   SlidersHorizontal,
+  TrendingUp,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -183,6 +184,8 @@ import {
   RestockSurtidoFotoControl,
 } from "./restock-surtido-foto-control";
 import { RotacionGraficoBoard } from "./rotacion-grafico-board";
+import { RotacionTendenciaModal } from "./rotacion-tendencia-modal";
+import { selectRotacionTendenciaRows } from "@/lib/rotacion/tendencia-scope";
 import {
   prefetchRotacionInforme,
   RotacionInformeBoard,
@@ -259,6 +262,15 @@ export function RotacionPageInner() {
   );
   const [ready, setReady] = useState(false);
   const [isAbcdModalOpen, setIsAbcdModalOpen] = useState(false);
+  const [tendenciaModal, setTendenciaModal] = useState<{
+    empresa: string;
+    sedeId: string;
+    sedeName: string;
+    start: string;
+    end: string;
+    items: string[];
+    scopeLabel: string;
+  } | null>(null);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
   const [boardView, setBoardView] = useState<"tabla" | "grafico" | "informe">(
     "tabla",
@@ -4084,6 +4096,15 @@ export function RotacionPageInner() {
                                   );
                                 })
                               : filteredRows;
+                    const tendenciaScope = selectRotacionTendenciaRows({
+                      rows: group.rows,
+                      categoryFilter,
+                      rowFilter,
+                      dateRange,
+                      categoryByItem,
+                      isAbcdFilterableRow,
+                      isNuevoItemInSelectedRange,
+                    });
                     const surtidoEstadoCountRows = isRestockCategoryView
                       ? quickFilteredRows.filter((row) =>
                           isNuevoItemInSelectedRange(row),
@@ -5147,6 +5168,32 @@ export function RotacionPageInner() {
                                       ? ceroRotacionCount
                                       : categoryFilteredCeroRotacionCount}
                                     )
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    title={
+                                      tendenciaScope.scoped
+                                        ? `Tendencia de venta de ${tendenciaScope.label}`
+                                        : "Tendencia de venta de la sede en el periodo"
+                                    }
+                                    className="inline-flex h-8 items-center rounded-full px-3 text-xs font-semibold text-slate-700 hover:border-amber-400 hover:bg-amber-50 hover:text-amber-900"
+                                    onClick={() =>
+                                      setTendenciaModal({
+                                        empresa: group.empresa,
+                                        sedeId: group.sedeId,
+                                        sedeName: displayRotationSedeName(
+                                          group.sedeName,
+                                        ),
+                                        start: dateRange.start,
+                                        end: dateRange.end,
+                                        items: tendenciaScope.itemIds,
+                                        scopeLabel: tendenciaScope.label,
+                                      })
+                                    }
+                                  >
+                                    <TrendingUp className="mr-1 h-3.5 w-3.5" />
+                                    Tendencia
                                   </Button>
                                   {isSurtidoTrackingTableView ? (
                                     <div
@@ -6380,6 +6427,19 @@ export function RotacionPageInner() {
           </div>
         ) : null;
       })()}
+
+      {tendenciaModal ? (
+        <RotacionTendenciaModal
+          empresa={tendenciaModal.empresa}
+          sedeId={tendenciaModal.sedeId}
+          sedeName={tendenciaModal.sedeName}
+          start={tendenciaModal.start}
+          end={tendenciaModal.end}
+          items={tendenciaModal.items}
+          scopeLabel={tendenciaModal.scopeLabel}
+          onClose={() => setTendenciaModal(null)}
+        />
+      ) : null}
 
       {surtidoAuditModalOpen && canViewSurtidoHistorial ? (
         <SurtidoAuditModal

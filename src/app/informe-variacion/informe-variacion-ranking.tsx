@@ -14,7 +14,8 @@ import {
 } from "@/lib/informe-variacion/format";
 import {
   INFORME_RANKING_DIMENSIONS,
-  INFORME_RANKING_LIMITS,
+  INFORME_RANKING_LIMIT_MAX,
+  INFORME_RANKING_LIMIT_MIN,
   buildInformeEmpresaSummary,
   buildInformeItemAbcdBySede,
   buildInformeRankingRows,
@@ -189,20 +190,12 @@ export function InformeRankingTable({
           ]}
           onChange={(value) => onMetricChange(value as InformeMetric)}
         />
-        <MiniToggle
-          value={String(limit)}
-          options={INFORME_RANKING_LIMITS.map((item) => ({
-            id: String(item),
-            label: `Top ${item}`,
-          }))}
-          onChange={(value) => onLimitChange(Number(value))}
-        />
         <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600">
           Top
           <input
             type="number"
-            min={5}
-            max={200}
+            min={INFORME_RANKING_LIMIT_MIN}
+            max={INFORME_RANKING_LIMIT_MAX}
             inputMode="numeric"
             value={topDraft}
             onChange={(event) => setTopDraft(event.target.value)}
@@ -214,7 +207,7 @@ export function InformeRankingTable({
               }
             }}
             aria-label="Cantidad del ranking"
-            className="h-7 w-16 rounded-lg border border-slate-200 bg-white px-2 text-right text-xs font-semibold text-slate-800 tabular-nums"
+            className="h-7 w-24 rounded-lg border border-slate-200 bg-white px-2 text-right text-xs font-semibold text-slate-800 tabular-nums"
           />
         </label>
       </div>

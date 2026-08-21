@@ -31,11 +31,16 @@ export const INFORME_RANKING_DIMENSIONS: Array<{
   { id: "item", label: "Ítem", keyIndex: 4 },
 ];
 
-export const INFORME_RANKING_LIMITS = [10, 20, 50, 100] as const;
+export const INFORME_RANKING_LIMIT_MIN = 5;
+export const INFORME_RANKING_LIMIT_MAX = 100_000;
+export const INFORME_RANKING_LIMIT_DEFAULT = 20;
 
 export const clampInformeRankingLimit = (value: number): number => {
-  if (!Number.isFinite(value)) return 20;
-  return Math.min(200, Math.max(5, Math.round(value)));
+  if (!Number.isFinite(value)) return INFORME_RANKING_LIMIT_DEFAULT;
+  return Math.min(
+    INFORME_RANKING_LIMIT_MAX,
+    Math.max(INFORME_RANKING_LIMIT_MIN, Math.round(value)),
+  );
 };
 
 export type InformeRankingSortCol = "name" | "cur" | "prev" | "var" | number;

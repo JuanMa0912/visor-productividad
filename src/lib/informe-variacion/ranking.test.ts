@@ -135,10 +135,12 @@ describe("buildInformeRankingRows", () => {
 });
 
 describe("clampInformeRankingLimit", () => {
-  it("permite un top escrito y lo acota entre 5 y 200", () => {
+  it("permite un top escrito y lo acota entre 5 y 100000", () => {
     assert.equal(clampInformeRankingLimit(15), 15);
     assert.equal(clampInformeRankingLimit(1), 5);
-    assert.equal(clampInformeRankingLimit(500), 200);
+    assert.equal(clampInformeRankingLimit(500), 500);
+    assert.equal(clampInformeRankingLimit(100_000), 100_000);
+    assert.equal(clampInformeRankingLimit(100_001), 100_000);
     assert.equal(clampInformeRankingLimit(Number.NaN), 20);
   });
 });

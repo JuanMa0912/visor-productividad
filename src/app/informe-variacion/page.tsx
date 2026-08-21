@@ -43,6 +43,16 @@ import {
 } from "@/lib/informe-variacion/periods";
 import { cn } from "@/lib/shared/utils";
 
+const informeActionButtonClass = (selected: boolean) =>
+  cn(
+    "rounded-lg border px-3 py-2 text-sm font-semibold shadow-sm transition",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
+    "disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none",
+    selected
+      ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800"
+      : "cursor-pointer border-slate-300 bg-white text-slate-800 hover:border-blue-500 hover:bg-blue-50 hover:text-blue-800 active:scale-[0.98] active:bg-blue-100",
+  );
+
 type InformeMeta = {
   maxDate: string | null;
   minDate?: string | null;
@@ -690,6 +700,25 @@ export default function InformeVariacionPage() {
   };
 
   const periodControlsDisabled = metaLoading || loading;
+  const ytdRanges = maxDate ? defaultInformeYtdRanges(maxDate) : null;
+  const alignedPrevious = draft
+    ? alignPreviousYearRange(draft.currentFrom, draft.currentTo)
+    : null;
+  const ytdPresetSelected = Boolean(
+    draft &&
+      ytdRanges &&
+      draft.currentFrom === ytdRanges.currentFrom &&
+      draft.currentTo === ytdRanges.currentTo &&
+      draft.previousFrom === ytdRanges.previousFrom &&
+      draft.previousTo === ytdRanges.previousTo,
+  );
+  const sameTramoPresetSelected = Boolean(
+    draft &&
+      alignedPrevious &&
+      draft.previousFrom === alignedPrevious.previousFrom &&
+      draft.previousTo === alignedPrevious.previousTo &&
+      !ytdPresetSelected,
+  );
   const showInitialLoader = metaLoading || (loading && !payload && !error);
   const payloadMatchesSelection = Boolean(
     payload &&
@@ -1051,6 +1080,7 @@ export default function InformeVariacionPage() {
             <button
               type="button"
               disabled={!draft || metaLoading}
+              aria-pressed={sameTramoPresetSelected}
               onClick={() => {
                 if (!draft) return;
                 const aligned = alignPreviousYearRange(
@@ -1060,15 +1090,16 @@ export default function InformeVariacionPage() {
                 if (!aligned) return;
                 setDraft({ ...draft, ...aligned });
               }}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className={informeActionButtonClass(sameTramoPresetSelected)}
             >
               Mismo tramo año anterior
             </button>
             <button
               type="button"
               disabled={!maxDate || metaLoading}
+              aria-pressed={ytdPresetSelected}
               onClick={() => applyDraft(defaultInformeYtdRanges(maxDate))}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className={informeActionButtonClass(ytdPresetSelected)}
             >
               Corrido del año
             </button>
