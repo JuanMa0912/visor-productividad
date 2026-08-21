@@ -339,6 +339,39 @@ WHERE trim(fecha_dcto) BETWEEN '20260801' AND '20260809' GROUP BY 1 ORDER BY 1;
 y solo entonces sincronizar. `margen_final` y `asistencia_horas` suben **siempre en modo
 replace**: subir con la local incompleta **borra en GCP** esas fechas.
 
+### 3.c.2 El tercer caso: no es el POS, es un ETL que le gana a otro
+
+Descubierto el 2026-08-21 en `inventario_proveedor_dia`: **5 de 8 dias sin empresas
+enteras**, identico en 232 y GCP (o sea, no era el sync). El POS estaba bien y la foto de
+`rotacion_base_item_dia_sede` estaba **completa** para las tres empresas en todos esos dias.
+
+El paso de inventario de `etl_proveedores.py` no lee el 217: lee `rotacion_base_item_dia_sede`.
+Y corria a las **07:12**, cuando `etl-rotacion@mercamio` (arranca 07:00) todavia esta
+escribiendo — cierra sobre las **07:25**. bogota (~3 min) ya estaba; mercamio y mtodo no.
+
+Lo que hace a este caso dificil de ver: **`Terminado OK`** con 529 filas en vez de ~2.900,
+porque la guarda "ante duda, no escribir" estaba en catalogo, puente y ventas pero **no** en
+inventario. Corregido: DELETE por `(empresa, fecha_dia)` + `ROLLBACK` si la empresa devuelve
+0 filas + exit 3. Timer movido a 07:45.
+
+**La regla general:** un ETL que lee una tabla que otro ETL esta escribiendo NO se puede
+ordenar con `After=` si cada uno cuelga de su propio timer — systemd solo ordena dentro de una
+misma transaccion de arranque. La unica palanca es la hora, y hay que dimensionarla con la
+duracion MEDIDA del que escribe, no con la de un dia bueno:
+
+```bash
+# cuanto tarda de verdad cada empresa de rotacion
+grep -E 'inicio|OK  empresa' /var/log/etl_rotacion/etl_rotacion_v3_$(date +%Y%m%d).log
+```
+
+Antes de mover un timer, revisar quien lee a quien:
+
+| ETL | lee de | por eso depende de |
+|---|---|---|
+| `etl_proveedores.py` (inventario) | `rotacion_base_item_dia_sede` (232) | `etl-rotacion@*` |
+| `etl_proveedores.py --reconciliar` | `ventas_item_diario` (232) | `visor-etl-ventas-item` |
+| el resto | 217 directo | solo del POS |
+
 ---
 
 ## 4. Codigos de salida

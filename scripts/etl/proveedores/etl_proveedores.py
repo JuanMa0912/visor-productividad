@@ -613,8 +613,15 @@ def cargar_inventario(env: dict, empresas, desde: str, hasta: str, dry_run: bool
     El inventario ya esta en rotacion_base_item_dia_sede (lo deja el ETL de rotacion), asi
     que aqui NO se toca el POS: solo se cruza contra el puente y se agrega.
         valorizado = SUM(can_disponible_foto * costo_uni_inventario)   -- al COSTO
-    Idempotente por (empresa, fecha_dia): DELETE + INSERT en una transaccion.
-    Solo se guardan filas con existencia distinta de cero.
+    Idempotente por (empresa, fecha_dia): DELETE + INSERT en una transaccion, UNA EMPRESA
+    A LA VEZ. Solo se guardan filas con existencia distinta de cero.
+
+    Se recorre empresa por empresa a proposito: rotacion la escriben TRES timers
+    independientes (etl-rotacion@mercamio 07:00, @mtodo 07:00:20, @bogota 07:00:40) y
+    mercamio tarda ~25 minutos. Este ETL corria a las 07:12, o sea leia una tabla A MEDIO
+    ESCRIBIR: solo bogota (~3 min) habia terminado. Con el DELETE viejo, que barria las tres
+    empresas del dia y reponia unicamente las que alcanzaran a estar, el resultado era
+    perder empresas enteras: 5 de 8 dias entre el 15 y el 20 de agosto de 2026.
     """
     total = 0
     vacios = []
@@ -645,50 +652,68 @@ def cargar_inventario(env: dict, empresas, desde: str, hasta: str, dry_run: bool
             return 0, []
 
         for dia in dias:
-            with tgt.cursor() as tc:
-                tc.execute(
-                    f"DELETE FROM {TABLE_INVENTARIO} "
-                    f"WHERE empresa = ANY(%s) AND fecha_dia = %s",
-                    (empresas_nom, dia),
-                )
-                tc.execute(
-                    f"""
-                    INSERT INTO {TABLE_INVENTARIO} (
-                        empresa, fecha_dia, id_co, sede, id_cricla1, proveedor,
-                        items_con_stock, unidades, valorizado
+            for empresa in empresas_nom:
+                with tgt.cursor() as tc:
+                    tc.execute(
+                        f"DELETE FROM {TABLE_INVENTARIO} "
+                        f"WHERE empresa = %s AND fecha_dia = %s",
+                        (empresa, dia),
                     )
-                    SELECT
-                        r.empresa,
-                        r.fecha_dia,
-                        r.sede                                        AS id_co,
-                        m.sede                                        AS sede,
-                        COALESCE(p.id_cricla1, %s)                    AS id_cricla1,
-                        COALESCE(c.nombre, %s)                        AS proveedor,
-                        count(*)                                      AS items_con_stock,
-                        sum(r.can_disponible_foto)                    AS unidades,
-                        sum(r.can_disponible_foto * r.costo_uni_inventario) AS valorizado
-                    FROM {TABLE_ROTACION} r
-                    LEFT JOIN {TABLE_PUENTE} p
-                           ON p.empresa = r.empresa AND p.id_item = r.id_item
-                    LEFT JOIN {TABLE_SEDE_MAP} m
-                           ON m.empresa_norm = r.empresa AND m.id_co_norm = r.sede
-                    LEFT JOIN {TABLE_CATALOGO} c
-                           ON c.empresa = r.empresa
-                          AND c.id_cricla1 = COALESCE(p.id_cricla1, %s)
-                    WHERE r.empresa = ANY(%s)
-                      AND r.fecha_dia = %s
-                      AND r.can_disponible_foto IS NOT NULL
-                      AND r.can_disponible_foto <> 0
-                    GROUP BY r.empresa, r.fecha_dia, r.sede, m.sede,
-                             COALESCE(p.id_cricla1, %s), COALESCE(c.nombre, %s);
-                    """,
-                    (SIN_PROVEEDOR_COD, SIN_PROVEEDOR_NOM, SIN_PROVEEDOR_COD,
-                     empresas_nom, dia, SIN_PROVEEDOR_COD, SIN_PROVEEDOR_NOM),
-                )
-                n = tc.rowcount
-            tgt.commit()
-            total += n
-            log(f"[inventario {dia}] {n} filas proveedor x sede")
+                    n_borradas = tc.rowcount
+                    tc.execute(
+                        f"""
+                        INSERT INTO {TABLE_INVENTARIO} (
+                            empresa, fecha_dia, id_co, sede, id_cricla1, proveedor,
+                            items_con_stock, unidades, valorizado
+                        )
+                        SELECT
+                            r.empresa,
+                            r.fecha_dia,
+                            r.sede                                        AS id_co,
+                            m.sede                                        AS sede,
+                            COALESCE(p.id_cricla1, %s)                    AS id_cricla1,
+                            COALESCE(c.nombre, %s)                        AS proveedor,
+                            count(*)                                      AS items_con_stock,
+                            sum(r.can_disponible_foto)                    AS unidades,
+                            sum(r.can_disponible_foto * r.costo_uni_inventario) AS valorizado
+                        FROM {TABLE_ROTACION} r
+                        LEFT JOIN {TABLE_PUENTE} p
+                               ON p.empresa = r.empresa AND p.id_item = r.id_item
+                        LEFT JOIN {TABLE_SEDE_MAP} m
+                               ON m.empresa_norm = r.empresa AND m.id_co_norm = r.sede
+                        LEFT JOIN {TABLE_CATALOGO} c
+                               ON c.empresa = r.empresa
+                              AND c.id_cricla1 = COALESCE(p.id_cricla1, %s)
+                        WHERE r.empresa = %s
+                          AND r.fecha_dia = %s
+                          AND r.can_disponible_foto IS NOT NULL
+                          AND r.can_disponible_foto <> 0
+                        GROUP BY r.empresa, r.fecha_dia, r.sede, m.sede,
+                                 COALESCE(p.id_cricla1, %s), COALESCE(c.nombre, %s);
+                        """,
+                        (SIN_PROVEEDOR_COD, SIN_PROVEEDOR_NOM, SIN_PROVEEDOR_COD,
+                         empresa, dia, SIN_PROVEEDOR_COD, SIN_PROVEEDOR_NOM),
+                    )
+                    n = tc.rowcount
+
+                if n == 0:
+                    # MISMA GUARDA QUE cargar_hechos: ante duda, no escribir. El ROLLBACK deshace
+                    # el DELETE de arriba, asi que una foto que todavia no existe NUNCA borra la
+                    # que ya estaba cargada. Una empresa sin foto es una empresa PENDIENTE (el ETL
+                    # de rotacion aun no llego a ella), no una empresa sin inventario: ninguna sede
+                    # tiene cero existencias en todos sus items.
+                    tgt.rollback()
+                    vacios.append(f"inventario:{empresa}@{dia}")
+                    if n_borradas:
+                        log(f"[inventario {empresa} {dia}] rotacion SIN FOTO, pero el destino ya "
+                            f"tenia {n_borradas} filas -> SE CONSERVAN (rollback del borrado).")
+                    else:
+                        log(f"[inventario {empresa} {dia}] rotacion SIN FOTO: 0 filas")
+                    continue
+
+                tgt.commit()
+                total += n
+                log(f"[inventario {empresa} {dia}] {n} filas proveedor x sede")
 
     return total, vacios
 
