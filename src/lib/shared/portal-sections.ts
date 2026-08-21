@@ -154,6 +154,30 @@ const normalizePortalSectionToken = (value?: string | null) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
+/**
+ * Convierte el valor crudo de BD/JSON a lista o `null` (sin restricción).
+ * `null`/`undefined` = todas. Array vacío = ninguna.
+ * Un string JSON de array se parsea; cualquier otro tipo no-nulo se trata
+ * como ninguna (nunca como “todas”), para no abrir el portal por un encoding raro.
+ */
+const asPortalPermissionList = (value: unknown): unknown[] | null => {
+  if (value == null) return null;
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.toLowerCase() === "null") return null;
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (parsed == null) return null;
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      /* no es JSON de lista */
+    }
+    return [];
+  }
+  return [];
+};
+
 export const resolvePortalSectionId = (
   value?: string | null,
 ): PortalSectionId | null =>
@@ -165,15 +189,17 @@ export const resolvePortalSubsectionId = (
   PORTAL_SUBSECTION_ALIAS_MAP[normalizePortalSectionToken(value)] ?? null;
 
 /**
- * `null` / no-array = sin restricción (todas).
+ * `null` / ausente = sin restricción (todas).
  * `[]` = ninguna (sin acceso).
  * Lista = whitelist.
+ * Un valor raro (objeto, texto que no es JSON de lista) = ninguna, no “todas”.
  */
 export const normalizeAllowedPortalSections = (
   value: unknown,
 ): PortalSectionId[] | null => {
-  if (!Array.isArray(value)) return null;
-  const entries = value.filter(
+  const list = asPortalPermissionList(value);
+  if (list === null) return null;
+  const entries = list.filter(
     (entry) => typeof entry === "string" && entry.trim(),
   );
   if (entries.length === 0) return [];
@@ -190,15 +216,17 @@ export const normalizeAllowedPortalSections = (
 };
 
 /**
- * `null` / no-array = sin restricción (todos).
+ * `null` / ausente = sin restricción (todos).
  * `[]` = ninguno (sin acceso).
  * Lista = whitelist.
+ * Un valor raro (objeto, texto que no es JSON de lista) = ninguno, no “todos”.
  */
 export const normalizeAllowedPortalSubsections = (
   value: unknown,
 ): PortalSubsectionId[] | null => {
-  if (!Array.isArray(value)) return null;
-  const entries = value.filter(
+  const list = asPortalPermissionList(value);
+  if (list === null) return null;
+  const entries = list.filter(
     (entry) => typeof entry === "string" && entry.trim(),
   );
   if (entries.length === 0) return [];

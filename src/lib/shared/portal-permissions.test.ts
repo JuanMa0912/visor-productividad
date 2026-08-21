@@ -18,10 +18,15 @@ import {
   canViewProveedoresQrLinks,
 } from "./special-role-features";
 
-test("empty portal permission lists mean no sections and subdashboards", () => {
-  assert.equal(canAccessPortalSection([], "producto"), false);
-  assert.equal(canAccessPortalSubsection([], "rotacion"), false);
-  assert.deepEqual(normalizeAllowedPortalSubsections([]), []);
+test("lista JSON en string no se interpreta como todas las secciones", () => {
+  assert.deepEqual(
+    normalizeAllowedPortalSubsections('["rotacion","margenes"]'),
+    ["rotacion", "margenes"],
+  );
+  assert.equal(canAccessPortalSubsection('["rotacion"]', "rotacion"), true);
+  assert.equal(canAccessPortalSubsection('["rotacion"]', "margenes"), false);
+  assert.equal(canAccessPortalSubsection("{mal}", "rotacion"), false);
+  assert.equal(canAccessPortalSection("{mal}", "producto"), false);
 });
 
 test("explicit subdashboard selection grants rotacion", () => {

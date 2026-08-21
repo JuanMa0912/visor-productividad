@@ -4,6 +4,7 @@ import { CONTROL_ROOM_MODULES } from "@/components/portal/portal-control-room";
 import {
   canSeeControlRoomModule,
   filterControlRoomModules,
+  sectionIdsWithVisibleModules,
   type ControlRoomAccessInput,
 } from "./control-room-access";
 
@@ -107,5 +108,20 @@ describe("accesos de sala de control", () => {
     const filtered = filterControlRoomModules(CONTROL_ROOM_MODULES, onlyVentas);
     const board = filtered.find((entry) => entry.id === "analisis-de-inventario");
     assert.equal(board?.href, "/ventas-x-item");
+  });
+
+  it("solo deja secciones con al menos un módulo permitido", () => {
+    const filtered = filterControlRoomModules(
+      CONTROL_ROOM_MODULES,
+      base({
+        allowedDashboards: ["venta", "producto", "operacion"],
+        allowedSubdashboards: ["rotacion"],
+      }),
+    );
+    assert.deepEqual(sectionIdsWithVisibleModules(filtered), ["producto"]);
+    assert.equal(
+      filtered.every((entry) => entry.id === "rotacion"),
+      true,
+    );
   });
 });

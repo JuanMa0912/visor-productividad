@@ -9,7 +9,10 @@ import {
   type ControlRoomDomain,
 } from "@/components/portal/portal-control-room";
 import { PORTAL_SECTIONS } from "@/lib/shared/portal-sections";
-import { filterControlRoomModules } from "@/lib/shared/control-room-access";
+import {
+  filterControlRoomModules,
+  sectionIdsWithVisibleModules,
+} from "@/lib/shared/control-room-access";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
 import {
@@ -27,15 +30,29 @@ export default function SeccionesPage() {
   const { isAdmin, hasSpecialRole } = usePermissions();
   const ready = status === "authenticated" && Boolean(user);
 
-  const visibleSections = useMemo(() => {
+  const visibleModules = useMemo(() => {
     if (!user) return [];
     const allowedDashboards = user.allowedDashboards;
-    return isAdmin || allowedDashboards === null
-      ? PORTAL_SECTIONS
-      : PORTAL_SECTIONS.filter((section) =>
-          allowedDashboards.includes(section.id),
-        );
+    const allowedSectionIds =
+      isAdmin || allowedDashboards === null
+        ? PORTAL_SECTIONS.map((section) => section.id)
+        : PORTAL_SECTIONS.filter((section) =>
+            allowedDashboards.includes(section.id),
+          ).map((section) => section.id);
+    return filterControlRoomModules(CONTROL_ROOM_MODULES, {
+      role: user.role,
+      isAdmin,
+      allowedDashboards: user.allowedDashboards,
+      allowedSubdashboards: user.allowedSubdashboards,
+      specialRoles: user.specialRoles,
+      visibleSectionIds: allowedSectionIds,
+    });
   }, [user, isAdmin]);
+
+  const visibleSections = useMemo(() => {
+    const allowedIds = new Set(sectionIdsWithVisibleModules(visibleModules));
+    return PORTAL_SECTIONS.filter((section) => allowedIds.has(section.id));
+  }, [visibleModules]);
 
   const tourSteps = useMemo(
     () => buildPortalSectionsTourSteps(visibleSections.map((section) => section.id)),
@@ -64,18 +81,6 @@ export default function SeccionesPage() {
       })),
     [visibleSections],
   );
-
-  const visibleModules = useMemo(() => {
-    if (!user) return [];
-    return filterControlRoomModules(CONTROL_ROOM_MODULES, {
-      role: user.role,
-      isAdmin,
-      allowedDashboards: user.allowedDashboards,
-      allowedSubdashboards: user.allowedSubdashboards,
-      specialRoles: user.specialRoles,
-      visibleSectionIds: visibleSections.map((section) => section.id),
-    });
-  }, [user, isAdmin, visibleSections]);
 
   if (!ready || !user) {
     return (

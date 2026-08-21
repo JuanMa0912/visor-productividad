@@ -103,3 +103,12 @@ export const filterControlRoomModules = <T extends ControlRoomModuleAccess>(
         href: firstVentaItemBoardHref(input.isAdmin, input.allowedSubdashboards),
       };
     });
+
+export const sectionIdsWithVisibleModules = (
+  modules: ReadonlyArray<{ section: PortalSectionId }>,
+): PortalSectionId[] => {
+  const present = new Set(modules.map((module) => module.section));
+  return (["venta", "producto", "operacion"] as const).filter((id) =>
+    present.has(id),
+  );
+};

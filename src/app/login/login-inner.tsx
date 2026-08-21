@@ -84,34 +84,33 @@ export function LoginPageInner() {
   };
 
   return (
-    <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-      <AuthBrandingPanel className="min-h-[280px] lg:min-h-screen" />
+    <div className="grid h-full grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+      <AuthBrandingPanel className="min-h-0 max-lg:hidden lg:h-full" />
 
-      <main className="relative flex items-center justify-center overflow-hidden px-6 py-12 lg:px-16 lg:shadow-[-40px_0_80px_-36px_rgba(2,6,23,0.5)]">
+      <main className="relative flex min-h-0 items-center justify-center overflow-hidden px-5 py-4 sm:px-8 lg:px-12 lg:shadow-[-40px_0_80px_-36px_rgba(2,6,23,0.5)]">
         <div className="login-form-aurora pointer-events-none absolute inset-0" />
         <div
           aria-hidden
           className="pointer-events-none absolute inset-y-0 left-0 w-32 bg-linear-to-r from-[#03060d]/12 to-transparent"
         />
 
-        <div className="relative w-full max-w-xl">
-          <div className="mb-7 grid grid-cols-2 gap-x-5 gap-y-5 rounded-2xl bg-white px-5 py-5 shadow-sm shadow-slate-900/5">
-            {/* MercaMio primero. Mismo ancho en las 4 celdas. */}
-            <div className="flex h-20 items-center justify-center sm:h-24">
-              <MercamioLogo className="h-auto w-full max-w-[14rem] object-contain" />
+        <div className="relative w-full max-w-lg">
+          <div className="mb-4 grid grid-cols-4 gap-3 rounded-2xl bg-white px-3 py-3 shadow-sm shadow-slate-900/5 sm:gap-4 sm:px-4 sm:py-3.5">
+            <div className="flex h-10 items-center justify-center sm:h-12">
+              <MercamioLogo className="h-auto max-h-full w-full object-contain" />
             </div>
-            <div className="flex h-20 items-center justify-center sm:h-24">
-              <MercatodoLogo className="h-auto w-full max-w-[14rem] object-contain" />
+            <div className="flex h-10 items-center justify-center sm:h-12">
+              <MercatodoLogo className="h-auto max-h-full w-full object-contain" />
             </div>
-            <div className="flex h-20 items-center justify-center sm:h-24">
-              <MerkmiosLogo className="h-auto w-full max-w-[14rem] object-contain" />
+            <div className="flex h-10 items-center justify-center sm:h-12">
+              <MerkmiosLogo className="h-auto max-h-full w-full object-contain" />
             </div>
-            <div className="flex h-20 items-center justify-center sm:h-24">
-              <DinastiaLogo className="h-auto w-full max-w-[14rem] object-contain" />
+            <div className="flex h-10 items-center justify-center sm:h-12">
+              <DinastiaLogo className="h-auto max-h-full w-full object-contain" />
             </div>
           </div>
 
-          <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-7 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.35)] sm:p-10">
+          <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-5 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.35)] sm:p-7">
             <p
               aria-hidden
               className="login-form-watermark pointer-events-none absolute -top-3 right-2 font-black uppercase select-none"
@@ -122,11 +121,11 @@ export function LoginPageInner() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">
               Nueva versión · {PORTAL_APP_VERSION_LABEL}
             </p>
-            <h2 className="mt-2 text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">
-              <span className="block text-xl font-semibold text-slate-700 sm:text-2xl">
+            <h2 className="mt-1.5 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+              <span className="block text-lg font-semibold text-slate-700 sm:text-xl">
                 Bienvenido a
               </span>
-              <span className="login-form-uaid mt-1 inline-block" aria-label="UAID">
+              <span className="login-form-uaid mt-0.5 inline-block" aria-label="UAID">
                 <span className="login-form-uaid-spray" aria-hidden>
                   UAID
                 </span>
@@ -136,25 +135,25 @@ export function LoginPageInner() {
                 <span className="login-form-uaid-word">UAID</span>
               </span>
             </h2>
-            <p className="mt-3 text-base leading-relaxed text-slate-600">
+            <p className="mt-2 text-sm leading-relaxed text-slate-600 sm:text-base">
               Ingresa tus credenciales para acceder al portal.
             </p>
 
             {searchParams.get("razon") === LOGIN_IDLE_QUERY ? (
-              <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
                 Tu sesión se cerró por inactividad. Vuelve a ingresar.
               </p>
             ) : null}
 
-            <form onSubmit={handleSubmit} className="mt-7 space-y-5">
+            <form onSubmit={handleSubmit} className="mt-5 space-y-4">
               <div>
                 <label
                   htmlFor="username"
-                  className="block text-sm font-semibold uppercase tracking-[0.12em] text-slate-700"
+                  className="block text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
                 >
                   Usuario
                 </label>
-                <div className="relative mt-2">
+                <div className="relative mt-1.5">
                   <User
                     className="pointer-events-none absolute top-1/2 left-3.5 h-5 w-5 -translate-y-1/2 text-slate-400"
                     aria-hidden
@@ -167,7 +166,7 @@ export function LoginPageInner() {
                     required
                     autoComplete="username"
                     placeholder="tu.usuario"
-                    className="w-full rounded-xl border border-slate-200 bg-white py-3 pr-3 pl-12 text-base text-slate-900 shadow-sm transition-all placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pr-3 pl-12 text-base text-slate-900 shadow-sm transition-all placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
                   />
                 </div>
               </div>
@@ -175,11 +174,11 @@ export function LoginPageInner() {
               <div>
                 <label
                   htmlFor="password"
-                  className="block text-sm font-semibold uppercase tracking-[0.12em] text-slate-700"
+                  className="block text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"
                 >
                   Contraseña
                 </label>
-                <div className="relative mt-2">
+                <div className="relative mt-1.5">
                   <Lock
                     className="pointer-events-none absolute top-1/2 left-3.5 h-5 w-5 -translate-y-1/2 text-slate-400"
                     aria-hidden
@@ -192,7 +191,7 @@ export function LoginPageInner() {
                     required
                     autoComplete="current-password"
                     placeholder="••••••••"
-                    className="w-full rounded-xl border border-slate-200 bg-white py-3 pr-3 pl-12 text-base text-slate-900 shadow-sm transition-all placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pr-3 pl-12 text-base text-slate-900 shadow-sm transition-all placeholder:text-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 focus:outline-none"
                   />
                 </div>
               </div>
@@ -209,7 +208,7 @@ export function LoginPageInner() {
               <button
                 type="submit"
                 disabled={loading}
-                className="login-form-cta flex w-full items-center justify-center gap-2 rounded-xl bg-linear-to-r from-sky-500 via-blue-600 to-indigo-600 px-4 py-3.5 text-base font-semibold text-white shadow-lg shadow-blue-600/30 transition-all hover:from-sky-400 hover:via-blue-600 hover:to-indigo-500 hover:shadow-xl hover:shadow-indigo-600/25 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+                className="login-form-cta flex w-full items-center justify-center gap-2 rounded-xl bg-linear-to-r from-sky-500 via-blue-600 to-indigo-600 px-4 py-3 text-base font-semibold text-white shadow-lg shadow-blue-600/30 transition-all hover:from-sky-400 hover:via-blue-600 hover:to-indigo-500 hover:shadow-xl hover:shadow-indigo-600/25 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading ? (
                   <>
@@ -221,14 +220,9 @@ export function LoginPageInner() {
                 )}
               </button>
             </form>
-
-            <p className="mt-6 border-t border-slate-200/80 pt-4 text-xs leading-relaxed text-slate-500">
-              El resto de pantallas se irá renovando en las próximas
-              actualizaciones.
-            </p>
           </div>
 
-          <p className="mt-6 text-center text-sm text-slate-500">
+          <p className="mt-4 text-center text-sm text-slate-500">
             ¿No puedes ingresar?{" "}
             <a
               href="mailto:soporte@mercamio.com.co"

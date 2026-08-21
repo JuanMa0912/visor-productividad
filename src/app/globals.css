@@ -24,7 +24,9 @@
   --color-destructive: var(--destructive);
   --font-sans: var(--font-geist-sans), "Inter", system-ui, sans-serif;
   --font-display: var(--font-geist-sans), "Geist", "Inter", sans-serif;
-  --font-mono: var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-mono:
+    var(--font-geist-mono), "Geist Mono", "JetBrains Mono", ui-monospace,
+    monospace;
 }
 
 :root {
@@ -132,7 +134,8 @@
   pre,
   kbd,
   samp {
-    font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+    font-family:
+      var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
   }
 }
 
@@ -216,16 +219,16 @@
     --tw-gradient-to: oklch(0.2 0.02 255 / 0);
   }
   .dark .via-slate-50 {
-    --tw-gradient-stops: var(--tw-gradient-from), oklch(0.22 0.02 255),
-      var(--tw-gradient-to);
+    --tw-gradient-stops:
+      var(--tw-gradient-from), oklch(0.22 0.02 255), var(--tw-gradient-to);
   }
   .dark .from-slate-900 {
     --tw-gradient-from: oklch(0.93 0.01 255);
     --tw-gradient-to: oklch(0.93 0.01 255 / 0);
   }
   .dark .via-slate-800 {
-    --tw-gradient-stops: var(--tw-gradient-from), oklch(0.9 0.01 255),
-      var(--tw-gradient-to);
+    --tw-gradient-stops:
+      var(--tw-gradient-from), oklch(0.9 0.01 255), var(--tw-gradient-to);
   }
   .dark .to-slate-700 {
     --tw-gradient-to: oklch(0.86 0.01 255);
@@ -315,8 +318,16 @@ input.vp-sync-autofill:-webkit-autofill {
 
 .login-cinematic-preload {
   background:
-    radial-gradient(ellipse 48% 36% at 78% 22%, rgba(94, 234, 212, 0.06), transparent 62%),
-    radial-gradient(ellipse 38% 42% at 12% 78%, rgba(109, 40, 217, 0.1), transparent 64%),
+    radial-gradient(
+      ellipse 48% 36% at 78% 22%,
+      rgba(94, 234, 212, 0.06),
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse 38% 42% at 12% 78%,
+      rgba(109, 40, 217, 0.1),
+      transparent 64%
+    ),
     linear-gradient(180deg, #050914 0%, #03060d 52%, #040812 100%);
   animation: login-preload-breathe 3.4s ease-in-out infinite alternate;
 }
@@ -335,10 +346,14 @@ input.vp-sync-autofill:-webkit-autofill {
 }
 
 .login-form-watermark {
-  font-size: clamp(6.5rem, 16vw, 10rem);
+  font-size: clamp(4.5rem, 12vw, 7.5rem);
   line-height: 0.8;
   letter-spacing: -0.08em;
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(79, 70, 229, 0.08));
+  background: linear-gradient(
+    135deg,
+    rgba(14, 165, 233, 0.12),
+    rgba(79, 70, 229, 0.08)
+  );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -391,8 +406,12 @@ input.vp-sync-autofill:-webkit-autofill {
       transparent 62%
     ),
     linear-gradient(90deg, #0284c7 0%, #1d4ed8 48%, #4338ca 100%);
-  background-size: 220% 100%, 100% 100%;
-  background-position: -120% 0, 0 0;
+  background-size:
+    220% 100%,
+    100% 100%;
+  background-position:
+    -120% 0,
+    0 0;
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
@@ -402,10 +421,14 @@ input.vp-sync-autofill:-webkit-autofill {
 
 @keyframes login-form-uaid-sheen {
   from {
-    background-position: -120% 0, 0 0;
+    background-position:
+      -120% 0,
+      0 0;
   }
   to {
-    background-position: 180% 0, 0 0;
+    background-position:
+      180% 0,
+      0 0;
   }
 }
 
@@ -455,6 +478,8 @@ input.vp-sync-autofill:-webkit-autofill {
   }
 
   .login-form-uaid-word {
-    background-position: 0 0, 0 0;
+    background-position:
+      0 0,
+      0 0;
   }
 }
