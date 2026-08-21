@@ -9,7 +9,10 @@ import {
   canAccessPortalSection,
   canAccessPortalSubsection,
 } from "@/lib/shared/portal-sections";
-import { canAccessRotacionBoard } from "@/lib/shared/special-role-features";
+import {
+  canAccessRotacionBoard,
+  canDeleteRotacionRestockSurtidoFoto,
+} from "@/lib/shared/special-role-features";
 import {
   makeCeroRotacionEstadoKey,
   parseCeroRotacionEstado,
@@ -515,6 +518,112 @@ export async function PUT(request: Request) {
         key: makeCeroRotacionEstadoKey(empresa, sedeId, item),
         mime: validated.mime,
         updatedAt: new Date().toISOString(),
+      },
+      { headers: { "Cache-Control": CACHE_CONTROL } },
+    ),
+  );
+}
+
+export async function DELETE(request: Request) {
+  const session = await requireAuthSession();
+  if (!session) {
+    return NextResponse.json(
+      { error: "No autorizado." },
+      { status: 401, headers: { "Cache-Control": CACHE_CONTROL } },
+    );
+  }
+  if (!(await verifyCsrf(request))) {
+    return NextResponse.json(
+      { error: "CSRF invalido." },
+      { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+    );
+  }
+  const gate = await rotacionAuthGate(session);
+  if (gate) return withSession(session, gate);
+
+  const isAdmin = session.user.role === "admin";
+  if (!canDeleteRotacionRestockSurtidoFoto(session.user.specialRoles, isAdmin)) {
+    return withSession(
+      session,
+      NextResponse.json(
+        { error: "No tienes permiso para eliminar fotos de surtido." },
+        { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return withSession(
+      session,
+      NextResponse.json(
+        { error: "Cuerpo JSON invalido." },
+        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+
+  const rec =
+    body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const empresa = String(rec.empresa ?? "").trim();
+  const sedeId = String(rec.sedeId ?? "").trim();
+  const item = String(rec.item ?? "").trim();
+  const start = normalizeCompactDateParam(String(rec.start ?? ""));
+  const end = normalizeCompactDateParam(String(rec.end ?? ""));
+  if (!empresa || !sedeId || !item || !start || !end) {
+    return withSession(
+      session,
+      NextResponse.json(
+        { error: "empresa, sedeId, item, start y end son obligatorios." },
+        { status: 400, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+
+  const resolved = await resolveAuthorizedScopes(session, start, end, [
+    `${empresa}::${sedeId}`,
+  ]);
+  if (!resolved.ok) return withSession(session, resolved.response);
+  if (!isAuthorizedScope(resolved.scopes, empresa, sedeId)) {
+    return withSession(
+      session,
+      NextResponse.json(
+        { error: "Sede no autorizada." },
+        { status: 403, headers: { "Cache-Control": CACHE_CONTROL } },
+      ),
+    );
+  }
+
+  const pool = await getDbPool();
+  try {
+    await pool.query(
+      `
+      DELETE FROM rotacion_restock_surtido_foto
+      WHERE empresa = $1 AND sede_id = $2 AND item = $3
+      `,
+      [empresa, sedeId, item],
+    );
+  } catch (error) {
+    if (isMissingFotoTable(error)) {
+      return withSession(
+        session,
+        NextResponse.json(
+          { error: `Falta la tabla de fotos de restock. ${MIGRATION_HINT}` },
+          { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
+        ),
+      );
+    }
+    throw error;
+  }
+
+  return withSession(
+    session,
+    NextResponse.json(
+      {
+        ok: true,
+        key: makeCeroRotacionEstadoKey(empresa, sedeId, item),
       },
       { headers: { "Cache-Control": CACHE_CONTROL } },
     ),

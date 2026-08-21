@@ -128,7 +128,7 @@ HTTPS se debe remover esa excepcion o establecer `true`. Ver
 | `allowed_lines` | lineas visibles; `NULL` equivale a todas. Si solo queda `asadero` o `fruver`, margenes/rotacion/variacion se acotan (sedes «Todas» no amplian ese alcance) |
 | `allowed_dashboards` | secciones UAID (`venta`, `producto`, `operacion`); `NULL` = todas; `{}` = ninguna |
 | `allowed_subdashboards` | permisos granulares por subtablero; `NULL` = todos los regulares; `{}` (array vacío) = ninguno. `precios-proveedor` es opt-in: no se hereda de `NULL` |
-| `special_roles` | capacidades especiales: `cronograma`, `alex`, `replicar_lunes`, `comparar_horarios`, `abcd`, `historial_sinventario`, `crear_horario_predeterminado`, `proveedores_qr` |
+| `special_roles` | capacidades especiales: `cronograma`, `alex`, `replicar_lunes`, `comparar_horarios`, `abcd`, `historial_sinventario`, `eliminar_foto_surtido`, `crear_horario_predeterminado`, `proveedores_qr` |
 | `sede` | campo legacy usado como fallback |
 | `is_active` | bloqueo o habilitacion de acceso |
 
@@ -138,6 +138,7 @@ Reglas notables:
 - `/cronograma` se muestra en UI a usuarios con `special_roles` que incluya `cronograma`.
 - Links/QR de `/proveedores` requieren `special_roles` con `proveedores_qr` (admin siempre; el tablero en sí se otorga con el subtablero `proveedores`).
 - `/api/jornada-extendida/alex-report` requiere seccion `operacion` y rol especial `alex`, salvo admin.
+- Borrar foto de surtido en Historial S.inventario de Rotación: admin siempre; el resto necesita `eliminar_foto_surtido` (y `historial_sinventario` para abrir ese historial).
 - Los subtableros mandan sobre roles legacy cuando ambos datos estan disponibles.
 - `/informe-variacion` exige el subtablero `informe-variacion` (no se hereda de `margenes` ni `rotacion`).
 - `/costos` exige el subtablero `precios-proveedor` marcado de forma explícita (no se hereda de `allowed_subdashboards = NULL`; perfiles gerente/subadmin no lo reciben solos). `/exp/precios-proveedor` redirige a `/costos`.

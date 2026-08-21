@@ -43,6 +43,7 @@ import {
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import {
   canAccessRotacionBoard,
+  canDeleteRotacionRestockSurtidoFoto,
   canEditRotacionAbcdConfig,
   canViewRotacionSinventarioHistorial,
 } from "@/lib/shared/special-role-features";
@@ -471,6 +472,11 @@ export function RotacionPageInner() {
   const canViewSurtidoHistorial = useMemo(
     /* Admin (role en BD): siempre. Resto: solo con special_roles historial_sinventario. Sin permiso: no mostrar boton. */
     () => canViewRotacionSinventarioHistorial(specialRoles, isAdmin),
+    [specialRoles, isAdmin],
+  );
+
+  const canDeleteSurtidoFoto = useMemo(
+    () => canDeleteRotacionRestockSurtidoFoto(specialRoles, isAdmin),
     [specialRoles, isAdmin],
   );
 
@@ -6333,6 +6339,15 @@ export function RotacionPageInner() {
           dateRange={dateRange}
           targetSedeSelections={targetSedeSelections}
           formattedRange={formattedRange}
+          canDeleteFoto={canDeleteSurtidoFoto}
+          onFotoDeleted={(key) => {
+            setRestockFotoMetaByKey((prev) => {
+              if (!prev[key]) return prev;
+              const next = { ...prev };
+              delete next[key];
+              return next;
+            });
+          }}
         />
       ) : null}
 

@@ -299,6 +299,10 @@ const SPECIAL_ROLE_OPTIONS = [
     label: "Historial S.inventario (rotacion)",
   },
   {
+    id: "eliminar_foto_surtido",
+    label: "Eliminar foto de surtido (rotacion)",
+  },
+  {
     id: "crear_horario_predeterminado",
     label: "Crear horario predeterminado",
   },

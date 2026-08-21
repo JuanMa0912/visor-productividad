@@ -29,6 +29,7 @@ import {
   resolveAdminUserPermissionsFromBody,
   resolveValidPortalProfile,
 } from "@/lib/shared/portal-profiles";
+import { ALLOWED_SPECIAL_ROLE_SET } from "@/lib/shared/special-role-features";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 
 const ALL_SEDES_VALUE = "Todas";
@@ -45,19 +46,6 @@ const ALLOWED_SEDE_SET = new Set([
   ALL_SEDES_VALUE,
 ]);
 const ALLOWED_LINE_SET = new Set(ALLOWED_LINE_IDS);
-const ALLOWED_SPECIAL_ROLE_SET = new Set([
-  "alex",
-  "cronograma",
-  "replicar_lunes",
-  "comparar_horarios",
-  "abcd",
-  "historial_sinventario",
-  "crear_horario_predeterminado",
-  "proveedores_qr",
-  "checklist_encargado",
-  "checklist_revisor",
-  "checklist_panel",
-]);
 
 const resolveValidSede = (value?: string | null) => {
   const trimmed = value?.trim();

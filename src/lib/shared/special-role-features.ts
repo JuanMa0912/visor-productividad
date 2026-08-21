@@ -2,8 +2,8 @@ import { canAccessPortalSection, canAccessPortalSubsection } from "@/lib/shared/
 
 /**
  * Roles especiales (app_users.special_roles) que habilitan funciones concretas.
- * Deben coincidir con los ids permitidos en la API de admin (`ALLOWED_SPECIAL_ROLE_SET`),
- * p. ej. replicar_lunes, comparar_horarios.
+ * Los ids permitidos viven en `ALLOWED_SPECIAL_ROLE_SET` (esta misma fuente).
+ * p. ej. replicar_lunes, comparar_horarios, eliminar_foto_surtido.
  */
 export const LUNES_SCHEDULE_SYNC_SPECIAL_ROLES = ["replicar_lunes"] as const;
 export const COMPARAR_HORARIOS_SPECIAL_ROLES = ["comparar_horarios"] as const;
@@ -12,6 +12,10 @@ export const ROTACION_ABCD_CONFIG_SPECIAL_ROLES = ["abcd"] as const;
 /** Ver historial de auditoria de S.inventario (cero rotacion / restock) en Rotacion. */
 export const ROTACION_SINVENTARIO_HISTORIAL_SPECIAL_ROLES = [
   "historial_sinventario",
+] as const;
+/** Eliminar foto de evidencia de surtido restock desde el historial de auditoria. */
+export const ROTACION_ELIMINAR_FOTO_SURTIDO_SPECIAL_ROLES = [
+  "eliminar_foto_surtido",
 ] as const;
 /**
  * Crear nuevos horarios predeterminados (el boton "+") en el modal de
@@ -30,6 +34,31 @@ const ROTACION_ABCD_CONFIG_SET = new Set<string>(ROTACION_ABCD_CONFIG_SPECIAL_RO
 const ROTACION_SINVENTARIO_HISTORIAL_SET = new Set<string>(
   ROTACION_SINVENTARIO_HISTORIAL_SPECIAL_ROLES,
 );
+const ROTACION_ELIMINAR_FOTO_SURTIDO_SET = new Set<string>(
+  ROTACION_ELIMINAR_FOTO_SURTIDO_SPECIAL_ROLES,
+);
+
+/**
+ * Catalogo de ids de `special_roles` que la API de admin acepta.
+ * Mantener alineado con los checkboxes de `/admin/usuarios`.
+ */
+export const APP_SPECIAL_ROLE_IDS = [
+  "alex",
+  "cronograma",
+  "replicar_lunes",
+  "comparar_horarios",
+  "abcd",
+  "historial_sinventario",
+  "eliminar_foto_surtido",
+  "crear_horario_predeterminado",
+  "proveedores_qr",
+  "checklist_encargado",
+  "checklist_revisor",
+  "checklist_panel",
+] as const;
+
+export const ALLOWED_SPECIAL_ROLE_SET = new Set<string>(APP_SPECIAL_ROLE_IDS);
+
 const CREATE_LUNES_PRESET_SET = new Set<string>(
   CREATE_LUNES_PRESET_SPECIAL_ROLES,
 );
@@ -191,6 +220,25 @@ export function canViewRotacionSinventarioHistorial(
   if (!specialRoles?.length) return false;
   return specialRoles.some((r) =>
     ROTACION_SINVENTARIO_HISTORIAL_SET.has(r.trim().toLowerCase()),
+  );
+}
+
+/**
+ * Puede eliminar la foto de evidencia de un item restock surtido.
+ *
+ * - Cuentas con **rol de aplicacion** `admin`: siempre permitido.
+ * - Cualquier otra cuenta: solo con `eliminar_foto_surtido` en `special_roles`.
+ *   Para hacerlo desde el historial tambien necesita `historial_sinventario`.
+ * - Quien no cumpla: la UI no muestra el boton de borrar.
+ */
+export function canDeleteRotacionRestockSurtidoFoto(
+  specialRoles: string[] | null | undefined,
+  isAdmin = false,
+): boolean {
+  if (isAdmin) return true;
+  if (!specialRoles?.length) return false;
+  return specialRoles.some((r) =>
+    ROTACION_ELIMINAR_FOTO_SURTIDO_SET.has(r.trim().toLowerCase()),
   );
 }
 

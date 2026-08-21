@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, Loader2, X } from "lucide-react";
+import { Camera, Loader2, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -24,6 +24,7 @@ import {
   formatAuditEstadoLabel,
   type SurtidoAuditApiRow,
 } from "./audit-utils";
+import { getCookieValue } from "./rotacion-preamble";
 
 export type SurtidoAuditSedeSelection = { value: string };
 
@@ -32,6 +33,8 @@ export interface SurtidoAuditModalProps {
   dateRange: { start: string; end: string };
   targetSedeSelections: ReadonlyArray<SurtidoAuditSedeSelection>;
   formattedRange: string;
+  canDeleteFoto?: boolean;
+  onFotoDeleted?: (key: string) => void;
 }
 
 export const SurtidoAuditModal = ({
@@ -39,6 +42,8 @@ export const SurtidoAuditModal = ({
   dateRange,
   targetSedeSelections,
   formattedRange,
+  canDeleteFoto = false,
+  onFotoDeleted,
 }: SurtidoAuditModalProps) => {
   const router = useRouter();
   const [rows, setRows] = useState<SurtidoAuditApiRow[]>([]);
@@ -58,6 +63,8 @@ export const SurtidoAuditModal = ({
     dataUrl: string | null;
     updatedAt: string | null;
   } | null>(null);
+  const [fotoDeleteBusy, setFotoDeleteBusy] = useState(false);
+  const [fotoDeleteConfirm, setFotoDeleteConfirm] = useState(false);
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
   const [filterUser, setFilterUser] = useState("");
@@ -239,6 +246,7 @@ export const SurtidoAuditModal = ({
   })();
 
   const abrirFoto = async (row: SurtidoAuditApiRow) => {
+  setFotoDeleteConfirm(false);
   setFotoAbierta({
     row,
     loading: true,
@@ -292,6 +300,67 @@ export const SurtidoAuditModal = ({
         : current,
     );
   }
+  };
+
+  const eliminarFoto = async () => {
+    if (!fotoAbierta || fotoDeleteBusy) return;
+    const csrf = getCookieValue("vp_csrf");
+    if (!csrf) {
+      setFotoAbierta((current) =>
+        current
+          ? { ...current, error: "No se pudo validar la sesion. Recargue la pagina." }
+          : current,
+      );
+      return;
+    }
+    setFotoDeleteBusy(true);
+    try {
+      const res = await fetch("/api/rotacion/restock-fotos", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrf,
+        },
+        body: JSON.stringify({
+          empresa: fotoAbierta.row.empresa,
+          sedeId: fotoAbierta.row.sede_id,
+          item: fotoAbierta.row.item,
+          start: dateRange.start,
+          end: dateRange.end,
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(payload.error ?? "No se pudo eliminar la foto.");
+      }
+      const key = makeCeroRotacionEstadoKey(
+        fotoAbierta.row.empresa,
+        fotoAbierta.row.sede_id,
+        fotoAbierta.row.item,
+      );
+      setFotoIndex((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      onFotoDeleted?.(key);
+      setFotoAbierta(null);
+      setFotoDeleteConfirm(false);
+    } catch (err) {
+      setFotoAbierta((current) =>
+        current
+          ? {
+              ...current,
+              error:
+                err instanceof Error
+                  ? err.message
+                  : "No se pudo eliminar la foto.",
+            }
+          : current,
+      );
+    } finally {
+      setFotoDeleteBusy(false);
+    }
   };
 
   return (
@@ -699,6 +768,54 @@ export const SurtidoAuditModal = ({
                 anterior. Si las dos fechas de arriba no coinciden, esta foto
                 corresponde a un marcaje posterior, no al de esta fila.
               </p>
+              {canDeleteFoto && fotoAbierta.dataUrl ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {fotoDeleteConfirm ? (
+                    <>
+                      <p className="text-xs text-rose-700">
+                        ¿Eliminar esta evidencia? No se puede deshacer.
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={fotoDeleteBusy}
+                        onClick={() => void eliminarFoto()}
+                        className="h-7 gap-1.5 px-3 text-[11px] font-bold uppercase tracking-wide"
+                      >
+                        {fotoDeleteBusy ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                        Confirmar
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={fotoDeleteBusy}
+                        onClick={() => setFotoDeleteConfirm(false)}
+                        className="h-7 px-3 text-[11px] font-semibold uppercase tracking-wide"
+                      >
+                        Cancelar
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={fotoDeleteBusy || fotoAbierta.loading}
+                      onClick={() => setFotoDeleteConfirm(true)}
+                      className="h-7 gap-1.5 border-rose-200 px-3 text-[11px] font-bold uppercase tracking-wide text-rose-800 hover:bg-rose-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Eliminar foto
+                    </Button>
+                  )}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
