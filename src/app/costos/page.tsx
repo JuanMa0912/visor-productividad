@@ -166,6 +166,7 @@ export default function CostosPage() {
     dir: 1,
   });
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const matrixAbortRef = useRef<AbortController | null>(null);
 
   const sublineasOptions = useMemo(() => {
     const all = meta?.sublineas ?? [];
@@ -306,6 +307,7 @@ export default function CostosPage() {
       );
       if (!from || !to) return;
       if (sedes.length === 0) {
+        setLoading(false);
         setMatrix({
           columns: [],
           rows: [],
@@ -317,6 +319,10 @@ export default function CostosPage() {
         });
         return;
       }
+      matrixAbortRef.current?.abort();
+      const controller = new AbortController();
+      matrixAbortRef.current = controller;
+      const timeoutId = window.setTimeout(() => controller.abort(), 90_000);
       setLoading(true);
       setError(null);
       try {
@@ -344,6 +350,7 @@ export default function CostosPage() {
         }
         const res = await fetch(`/api/costos?${params}`, {
           cache: "no-store",
+          signal: controller.signal,
         });
         const data = (await res.json()) as {
           matrix?: PreciosProveedorMatrix;
@@ -381,10 +388,23 @@ export default function CostosPage() {
             .catch(() => setPrev(null));
         }
       } catch (err) {
+        const superseded =
+          controller.signal.aborted && matrixAbortRef.current !== controller;
+        if (superseded) return;
         setMatrix(null);
-        setError(err instanceof Error ? err.message : "Error cargando");
+        if (controller.signal.aborted) {
+          setError(
+            "La consulta tardó demasiado. Reduce sedes o el rango e intenta de nuevo.",
+          );
+        } else {
+          setError(err instanceof Error ? err.message : "Error cargando");
+        }
       } finally {
-        setLoading(false);
+        window.clearTimeout(timeoutId);
+        if (matrixAbortRef.current === controller) {
+          matrixAbortRef.current = null;
+          setLoading(false);
+        }
       }
     },
     [
@@ -451,9 +471,9 @@ export default function CostosPage() {
   );
 
   const loadMeta = useCallback(async () => {
-    setLoading(true);
     const res = await fetch("/api/costos?mode=meta", {
       cache: "no-store",
+      signal: AbortSignal.timeout(45_000),
     });
     const data = (await res.json()) as {
       meta?: PreciosProveedorMeta;
@@ -481,7 +501,7 @@ export default function CostosPage() {
     // La empresa si queda precargada porque acota el desplegable de sedes.
     setSelectedSedes([]);
     void sedeKeys;
-  }, [loadMatrix]);
+  }, []);
 
   useEffect(() => {
     if (status !== "authenticated" || !user) return;
@@ -491,8 +511,13 @@ export default function CostosPage() {
   useEffect(() => {
     if (status !== "authenticated" || !canAccess) return;
     void loadMeta().catch((err) => {
-      setLoading(false);
-      setError(err instanceof Error ? err.message : "Error meta");
+      setError(
+        err instanceof Error
+          ? err.name === "TimeoutError" || err.name === "AbortError"
+            ? "El catálogo de Costos tardó demasiado. Recarga la página."
+            : err.message
+          : "Error meta",
+      );
     });
     // Solo al autenticar: la recarga por filtros va en el efecto de abajo.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/auth gate
@@ -908,7 +933,7 @@ export default function CostosPage() {
               label="Sedes"
               values={selectedSedes}
               options={sedeOptions}
-              emptyLabel="Todas"
+              emptyLabel="Elige sedes"
               searchable
               onChange={(next) => {
                 setSelectedSedes(next.length > 0 ? next : visibleSedeKeys);
@@ -1025,6 +1050,10 @@ export default function CostosPage() {
             {hayCambiosSinAplicar && !loading ? (
               <span className="text-xs font-semibold text-blue-700">
                 Hay filtros sin aplicar
+              </span>
+            ) : !puedeConsultar ? (
+              <span className="text-xs font-semibold text-amber-800">
+                Elige al menos una sede y pulsa Actualizar.
               </span>
             ) : (
               <span className="text-xs text-slate-500">

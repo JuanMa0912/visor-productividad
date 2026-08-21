@@ -95,6 +95,7 @@ export async function GET(request: Request) {
     const pool = await getDbPool();
     const client = await pool.connect();
     try {
+      await client.query("SET LOCAL statement_timeout = '60s'");
       if (mode === "meta") {
         const meta = await queryPreciosProveedorMeta(client);
         return withSession(NextResponse.json({ meta }));
@@ -190,11 +191,14 @@ export async function GET(request: Request) {
     }
   } catch (error) {
     console.error("[costos]", error);
+    const timedOut =
+      error instanceof Error && /statement timeout/i.test(error.message);
     return withSession(
       NextResponse.json(
         {
-          error:
-            error instanceof Error
+          error: timedOut
+            ? "La consulta superó 60 s. Reduce sedes, ítems o el rango de fechas."
+            : error instanceof Error
               ? error.message
               : "Error consultando el prototipo.",
         },

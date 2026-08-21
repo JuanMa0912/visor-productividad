@@ -286,7 +286,7 @@ const isoToCompact = (iso: string) => iso.replace(/-/g, "");
 const compactDayDiff = (desde: string, hasta: string) => {
   const a = String(desde ?? "").trim();
   const b = String(hasta ?? "").trim();
-  if (!/^d{8}$/.test(a) || !/^d{8}$/.test(b)) return 0;
+  if (!/^\d{8}$/.test(a) || !/^\d{8}$/.test(b)) return 0;
   const toDate = (raw: string) =>
     new Date(
       Number(raw.slice(0, 4)),
@@ -368,7 +368,6 @@ export const resolveDefaultDateRange = async (
   const bounds = await client.query<{ min: string | null; max: string | null }>(`
     SELECT MIN(fecha_dcto) AS min, MAX(fecha_dcto) AS max
     FROM margen_item_dia_roll
-    WHERE fecha_dcto ~ '^[0-9]{8}$'
   `);
   const min = compactToIso(String(bounds.rows[0]?.min ?? ""));
   const max = compactToIso(String(bounds.rows[0]?.max ?? ""));
@@ -390,8 +389,8 @@ export const queryPreciosProveedorMeta = async (
   client: PoolClient,
 ): Promise<PreciosProveedorMeta> => {
   const range = await resolveDefaultDateRange(client);
-  // Marcas del PRODUCTO. Salen del puente y no del maestro del POS, para que la
-  // lista solo ofrezca marcas realmente mapeadas a algun item.
+  const catalogEnd = isoToCompact(range.max ?? range.end);
+  const catalogStart = compactShiftDays(catalogEnd, -120);
   const marcas = await client.query<{ id: string; label: string }>(`
     SELECT BTRIM(marca) AS id, BTRIM(marca) AS label
     FROM proveedor_item
@@ -400,32 +399,42 @@ export const queryPreciosProveedorMeta = async (
     ORDER BY 1
     LIMIT 4000
   `);
-  const lineas = await client.query<{ id: string; label: string }>(`
+  const lineas = await client.query<{ id: string; label: string }>(
+    `
     SELECT id_linea1 AS id,
            COALESCE(NULLIF(MAX(nombre_linea1), ''), id_linea1) AS label
     FROM margen_item_dia_roll
-    WHERE NULLIF(id_linea1, '') IS NOT NULL
+    WHERE fecha_dcto >= $1
+      AND fecha_dcto <= $2
+      AND NULLIF(id_linea1, '') IS NOT NULL
       AND TRIM(COALESCE(id_tipo, '')) = '4'
     GROUP BY id_linea1
     ORDER BY 1
     LIMIT 80
-  `);
+    `,
+    [catalogStart, catalogEnd],
+  );
   const sublineas = await client.query<{
     id: string;
     label: string;
     linea_id: string;
-  }>(`
+  }>(
+    `
     SELECT
       id_linea2 AS id,
       COALESCE(NULLIF(MAX(nombre_linea2), ''), id_linea2) AS label,
       MAX(id_linea1) AS linea_id
     FROM margen_item_dia_roll
-    WHERE NULLIF(id_linea2, '') IS NOT NULL
+    WHERE fecha_dcto >= $1
+      AND fecha_dcto <= $2
+      AND NULLIF(id_linea2, '') IS NOT NULL
       AND TRIM(COALESCE(id_tipo, '')) = '4'
     GROUP BY id_linea2
     ORDER BY 1
     LIMIT 400
-  `);
+    `,
+    [catalogStart, catalogEnd],
+  );
   return {
     minDate: range.min,
     maxDate: range.max,
@@ -447,7 +456,7 @@ export const queryPreciosProveedorMeta = async (
     empresas: [...new Set(prototypeSedeColumns().map((col) => col.empresa))].map(
       (id) => ({ id, label: empresaLabel(id) }),
     ),
-    proveedores: await queryPreciosProveedorCatalogo(client),
+    proveedores: await queryPreciosProveedorCatalogo(client, catalogStart),
     marcas: marcas.rows.map((row) => ({
       id: String(row.id ?? "").trim(),
       label: String(row.label ?? "").trim(),
@@ -459,6 +468,7 @@ export const queryPreciosProveedorMeta = async (
 
 async function queryPreciosProveedorCatalogo(
   client: PoolClient,
+  fromCompact?: string,
 ): Promise<Array<{ id: string; label: string }>> {
   const byId = new Map<string, string>();
   const add = (id: string, label: string) => {
@@ -482,16 +492,24 @@ async function queryPreciosProveedorCatalogo(
     // catálogo opcional
   }
   try {
-    const oc = await client.query<{ id: string; label: string }>(`
+    const ocParams = /^\d{8}$/.test(fromCompact ?? "")
+      ? [fromCompact]
+      : [];
+    const ocFechaSql = ocParams.length > 0 ? "AND fecha_dcto >= $1" : "";
+    const oc = await client.query<{ id: string; label: string }>(
+      `
       SELECT
-        'oc:' || BTRIM(id_terc) AS id,
-        COALESCE(NULLIF(BTRIM(MAX(terc_nombre)), ''), BTRIM(id_terc)) AS label
+        'oc:' || id_terc AS id,
+        COALESCE(NULLIF(BTRIM(MAX(terc_nombre)), ''), id_terc) AS label
       FROM orden_compra_linea
-      WHERE BTRIM(COALESCE(id_terc, '')) <> ''
-      GROUP BY BTRIM(id_terc)
+      WHERE id_terc <> ''
+        ${ocFechaSql}
+      GROUP BY id_terc
       ORDER BY 2
       LIMIT 400
-    `);
+      `,
+      ocParams,
+    );
     for (const row of oc.rows) add(String(row.id), String(row.label));
   } catch {
     // OC opcional
@@ -1053,6 +1071,12 @@ const ROTACION_SEDE_SQL = `
   END
 `;
 
+let costosSchemaCache: {
+  oc: boolean;
+  rot: boolean;
+  invOk: boolean;
+} | null = null;
+
 async function queryCostoEntradaMap(
   client: PoolClient,
   input: {
@@ -1065,17 +1089,35 @@ async function queryCostoEntradaMap(
   const map = new Map<string, number>();
   if (input.itemIds.length === 0 || input.columns.length === 0) return map;
 
-  const cols = await client.query<{ column_name: string }>(
-    `
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = 'rotacion_base_item_dia_sede'
-      AND column_name = ANY($1::text[])
-    `,
-    [["empresa", "sede", "id_item", "fecha_dia", "costo_uni_inventario"]],
-  );
-  if (cols.rows.length !== 5) return map;
+  if (!costosSchemaCache) {
+    const cols = await client.query<{ column_name: string }>(
+      `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'rotacion_base_item_dia_sede'
+        AND column_name = ANY($1::text[])
+      `,
+      [["empresa", "sede", "id_item", "fecha_dia", "costo_uni_inventario"]],
+    );
+    const tables = await client.query<{ oc: boolean; rot: boolean }>(`
+      SELECT
+        EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = 'orden_compra_linea'
+        ) AS oc,
+        EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = 'rotacion_salidas_dia'
+        ) AS rot
+    `);
+    costosSchemaCache = {
+      invOk: cols.rows.length === 5,
+      oc: Boolean(tables.rows[0]?.oc),
+      rot: Boolean(tables.rows[0]?.rot),
+    };
+  }
+  if (!costosSchemaCache.invOk) return map;
 
   const fromCompact = isoToCompact(input.fromIso);
   const toCompact = isoToCompact(input.toIso);
@@ -1093,19 +1135,8 @@ async function queryCostoEntradaMap(
     })
     .join(", ");
 
-  const tables = await client.query<{ oc: boolean; rot: boolean }>(`
-    SELECT
-      EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'orden_compra_linea'
-      ) AS oc,
-      EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'rotacion_salidas_dia'
-      ) AS rot
-  `);
-  const ocExists = Boolean(tables.rows[0]?.oc);
-  const rotExists = Boolean(tables.rows[0]?.rot);
+  const ocExists = costosSchemaCache.oc;
+  const rotExists = costosSchemaCache.rot;
 
   const extraCtes: string[] = [];
   if (ocExists) {
@@ -1122,8 +1153,8 @@ async function queryCostoEntradaMap(
         SUM(tot_bruto)
           / NULLIF(SUM(${ocEntradaQtySql("tipdoc")}), 0) AS pcu
       FROM orden_compra_linea
-      WHERE BTRIM(fecha_dcto) >= $4
-        AND BTRIM(fecha_dcto) <= $5
+      WHERE fecha_dcto >= $4
+        AND fecha_dcto <= $5
         AND BTRIM(id_item) = ANY($3::text[])
         AND ${ocEntradaInvTipdocSql("empresa", "tipdoc")}
       GROUP BY 1, 2, 3, 4
@@ -1142,8 +1173,8 @@ async function queryCostoEntradaMap(
         SUM(tot_bruto)
           / NULLIF(SUM(${ocEntradaQtySql("tipdoc")}), 0) AS pcu
       FROM orden_compra_linea
-      WHERE BTRIM(fecha_dcto) >= $4
-        AND BTRIM(fecha_dcto) <= $5
+      WHERE fecha_dcto >= $4
+        AND fecha_dcto <= $5
         AND BTRIM(id_item) = ANY($3::text[])
         AND ${ocEntradaPoTipdocSql("empresa", "tipdoc")}
       GROUP BY 1, 2, 3, 4
