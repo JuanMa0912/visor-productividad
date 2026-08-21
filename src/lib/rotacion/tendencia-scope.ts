@@ -15,6 +15,20 @@ export type RotacionTendenciaScope = {
   scoped: boolean;
 };
 
+export type RotacionTendenciaMetric = "ventas" | "unidades" | "inventario";
+
+export const tendenciaUsesStockDefault = (
+  categoryFilter: GroupAbcdFilter,
+  rowFilter: GroupRowsQuickFilter,
+): boolean =>
+  rowFilter === "cero_rotacion" ||
+  rowFilter === "both" ||
+  categoryFilter === "0" ||
+  categoryFilter === "S" ||
+  categoryFilter === "R" ||
+  categoryFilter === "N" ||
+  categoryFilter === "D0S";
+
 const isIsoDay = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
 /** Piso de la gráfica: 1 de junio del año del recorte. */

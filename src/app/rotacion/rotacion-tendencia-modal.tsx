@@ -10,7 +10,8 @@ import {
   getCookieValue,
 } from "@/app/rotacion/rotacion-preamble";
 import { useRotacionViewConfig } from "@/app/rotacion/rotacion-view-config-provider";
-import { clampTendenciaDateRange } from "@/lib/rotacion/tendencia-scope";
+import { clampTendenciaDateRange, type RotacionTendenciaMetric } from "@/lib/rotacion/tendencia-scope";
+import { cn } from "@/lib/shared/utils";
 
 export type RotacionTendenciaModalProps = {
   empresa: string;
@@ -23,10 +24,25 @@ export type RotacionTendenciaModalProps = {
   items: string[];
   scoped: boolean;
   scopeLabel: string;
+  defaultMetric?: RotacionTendenciaMetric;
   onClose: () => void;
 };
 
-type TrendPoint = { day: string; sales: number };
+type TrendPoint = {
+  day: string;
+  sales: number;
+  units: number;
+  inventoryValue: number;
+};
+
+const METRIC_OPTIONS: Array<{
+  id: RotacionTendenciaMetric;
+  label: string;
+}> = [
+  { id: "ventas", label: "Ventas" },
+  { id: "unidades", label: "Unidades" },
+  { id: "inventario", label: "Valor inventario" },
+];
 
 const formatDayLabel = (day: string): string => {
   const parts = day.split("-").map(Number);
@@ -51,6 +67,7 @@ export function RotacionTendenciaModal({
   items,
   scoped,
   scopeLabel,
+  defaultMetric = "ventas",
   onClose,
 }: RotacionTendenciaModalProps) {
   const { apiBasePath } = useRotacionViewConfig();
@@ -71,6 +88,7 @@ export function RotacionTendenciaModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [points, setPoints] = useState<TrendPoint[]>([]);
+  const [metric, setMetric] = useState<RotacionTendenciaMetric>(defaultMetric);
 
   const itemsKey = scoped ? items.join("\n") : "";
   useEffect(() => {
@@ -130,13 +148,37 @@ export function RotacionTendenciaModal({
     [points],
   );
   const values = useMemo(
-    () => points.map((point) => point.sales),
-    [points],
+    () =>
+      points.map((point) => {
+        if (metric === "unidades") return point.units;
+        if (metric === "inventario") return point.inventoryValue;
+        return point.sales;
+      }),
+    [metric, points],
   );
   const total = useMemo(
     () => values.reduce((sum, value) => sum + value, 0),
     [values],
   );
+  const closing = values.at(-1) ?? 0;
+  const metricLabel =
+    METRIC_OPTIONS.find((option) => option.id === metric)?.label ?? "Ventas";
+  const formatMetricValue = (value: number) =>
+    metric === "unidades"
+      ? value.toLocaleString("es-CO", { maximumFractionDigits: 1 })
+      : formatPrice(value);
+  const formatAxisValue = (value: number) =>
+    metric === "unidades"
+      ? value.toLocaleString("es-CO", { maximumFractionDigits: 0 })
+      : formatPriceWithoutSixZeros(value);
+  const summaryText =
+    metric === "ventas"
+      ? total > 0
+        ? ` Total ${formatMetricValue(total)}`
+        : null
+      : closing !== 0
+        ? ` Al cierre ${formatMetricValue(closing)}`
+        : null;
 
   const applyDraftRange = () => {
     const next = clampTendenciaDateRange({
@@ -175,7 +217,7 @@ export function RotacionTendenciaModal({
           id="rotacion-tendencia-title"
           className="pr-10 text-lg font-bold text-slate-900"
         >
-          Tendencia de venta
+          Tendencia
         </h2>
         <p className="mt-1 text-sm text-slate-600">
           {sedeName} · {scopeLabel}
@@ -214,9 +256,31 @@ export function RotacionTendenciaModal({
           >
             Aplicar fechas
           </Button>
+          <span
+            className="inline-flex overflow-hidden rounded-lg border border-slate-200"
+            role="group"
+            aria-label="Métrica de tendencia"
+          >
+            {METRIC_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setMetric(option.id)}
+                aria-pressed={metric === option.id}
+                className={cn(
+                  "h-9 px-3 text-xs font-semibold transition",
+                  metric === option.id
+                    ? "bg-amber-600 text-white"
+                    : "bg-white text-slate-600 hover:bg-amber-50",
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </span>
           <p className="text-xs text-slate-500">
-            Desde el 1 de junio.{" "}
-            {total > 0 ? `Total ${formatPrice(total)}` : null}
+            Desde el 1 de junio.
+            {summaryText}
           </p>
         </div>
 
@@ -230,7 +294,7 @@ export function RotacionTendenciaModal({
             <p className="py-16 text-center text-sm text-rose-700">{error}</p>
           ) : points.length === 0 ? (
             <p className="py-16 text-center text-sm text-slate-500">
-              No hay ventas diarias para este recorte.
+              No hay datos diarios para este recorte.
             </p>
           ) : (
             <LineChart
@@ -251,18 +315,23 @@ export function RotacionTendenciaModal({
               yAxis={[
                 {
                   valueFormatter: (value: number | null) =>
-                    value == null ? "" : formatPriceWithoutSixZeros(value),
+                    value == null ? "" : formatAxisValue(value),
                 },
               ]}
               series={[
                 {
                   data: values,
-                  label: "Venta $",
-                  color: "#d97706",
+                  label: metricLabel,
+                  color:
+                    metric === "inventario"
+                      ? "#7c3aed"
+                      : metric === "unidades"
+                        ? "#2563eb"
+                        : "#d97706",
                   area: true,
                   showMark: values.length <= 21,
                   valueFormatter: (value: number | null) =>
-                    value == null ? "—" : formatPrice(value),
+                    value == null ? "—" : formatMetricValue(value),
                 },
               ]}
               grid={{ horizontal: true }}

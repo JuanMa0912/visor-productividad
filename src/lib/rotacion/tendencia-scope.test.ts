@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { RotationRow } from "@/app/rotacion/rotacion-preamble";
-import { selectRotacionTendenciaRows, clampTendenciaDateRange } from "@/lib/rotacion/tendencia-scope";
+import { selectRotacionTendenciaRows, clampTendenciaDateRange, tendenciaUsesStockDefault } from "@/lib/rotacion/tendencia-scope";
 import {
   enumerateIsoDays,
   fillDailySalesTrend,
@@ -123,6 +123,18 @@ describe("selectRotacionTendenciaRows", () => {
   });
 });
 
+describe("tendenciaUsesStockDefault", () => {
+  it("usa inventario en cero rotacion, restock y 0", () => {
+    assert.equal(tendenciaUsesStockDefault("all", "cero_rotacion"), true);
+    assert.equal(tendenciaUsesStockDefault("all", "both"), true);
+    assert.equal(tendenciaUsesStockDefault("S", "none"), true);
+    assert.equal(tendenciaUsesStockDefault("0", "none"), true);
+    assert.equal(tendenciaUsesStockDefault("D0S", "none"), true);
+    assert.equal(tendenciaUsesStockDefault(["A"], "none"), false);
+    assert.equal(tendenciaUsesStockDefault("all", "none"), false);
+  });
+});
+
 describe("clampTendenciaDateRange", () => {
   it("no deja ir antes del 1 de junio del año", () => {
     const next = clampTendenciaDateRange({
@@ -146,12 +158,12 @@ describe("fillDailySalesTrend", () => {
     ]);
     assert.deepEqual(
       fillDailySalesTrend("2026-08-14", "2026-08-16", [
-        { day: "2026-08-15", sales: 1200 },
+        { day: "2026-08-15", sales: 1200, units: 40, inventoryValue: 800 },
       ]),
       [
-        { day: "2026-08-14", sales: 0 },
-        { day: "2026-08-15", sales: 1200 },
-        { day: "2026-08-16", sales: 0 },
+        { day: "2026-08-14", sales: 0, units: 0, inventoryValue: 0 },
+        { day: "2026-08-15", sales: 1200, units: 40, inventoryValue: 800 },
+        { day: "2026-08-16", sales: 0, units: 0, inventoryValue: 0 },
       ],
     );
   });

@@ -4,6 +4,7 @@ import {
   hasProveedorFilter,
   keepSelected,
   parseProveedorFilterIds,
+  resolveCostosSedes,
   splitCostosCsv,
 } from "@/lib/exp-precios-proveedor/filters";
 
@@ -12,6 +13,19 @@ describe("costos filter params", () => {
     assert.deepEqual(splitCostosCsv("a, b,,c"), ["a", "b", "c"]);
     assert.deepEqual(splitCostosCsv(""), []);
     assert.deepEqual(splitCostosCsv(null), []);
+  });
+
+  it("vacío en sede significa todas las visibles", () => {
+    const all = ["mercamio|001", "mercamio|002", "mtodo|010"];
+    assert.deepEqual(resolveCostosSedes([], all), all);
+    assert.deepEqual(resolveCostosSedes(["mercamio|002"], all), [
+      "mercamio|002",
+    ]);
+    assert.deepEqual(resolveCostosSedes([], all, ["mtodo"]), ["mtodo|010"]);
+    assert.deepEqual(
+      resolveCostosSedes(["mercamio|001", "mtodo|010"], all, ["mtodo"]),
+      ["mtodo|010"],
+    );
   });
 
   it("conserva solo ids que siguen en el catálogo", () => {

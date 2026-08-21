@@ -5,9 +5,20 @@ import { getRotacionSourceTable } from "@/lib/rotacion/source-context";
 export type RotacionSedeSalesTrendPoint = {
   day: string;
   sales: number;
+  units: number;
+  inventoryValue: number;
 };
 
 const MAX_ITEMS = 8_000;
+
+const emptyPoint = (
+  day: string,
+): RotacionSedeSalesTrendPoint => ({
+  day,
+  sales: 0,
+  units: 0,
+  inventoryValue: 0,
+});
 
 export const enumerateIsoDays = (start: string, end: string): string[] => {
   const days: string[] = [];
@@ -27,15 +38,26 @@ export const enumerateIsoDays = (start: string, end: string): string[] => {
 export const fillDailySalesTrend = (
   start: string,
   end: string,
-  hits: Array<{ day: string; sales: number }>,
+  hits: Array<{
+    day: string;
+    sales?: number;
+    units?: number;
+    inventoryValue?: number;
+  }>,
 ): RotacionSedeSalesTrendPoint[] => {
-  const byDay = new Map(
-    hits.map((row) => [row.day.slice(0, 10), Number(row.sales) || 0]),
+  const byDay = new Map<string, RotacionSedeSalesTrendPoint>();
+  for (const row of hits) {
+    const day = row.day.slice(0, 10);
+    byDay.set(day, {
+      day,
+      sales: Number(row.sales) || 0,
+      units: Number(row.units) || 0,
+      inventoryValue: Number(row.inventoryValue) || 0,
+    });
+  }
+  return enumerateIsoDays(start, end).map(
+    (day) => byDay.get(day) ?? emptyPoint(day),
   );
-  return enumerateIsoDays(start, end).map((day) => ({
-    day,
-    sales: byDay.get(day) ?? 0,
-  }));
 };
 
 export async function loadRotacionSedeSalesTrend(input: {
@@ -73,11 +95,18 @@ export async function loadRotacionSedeSalesTrend(input: {
       itemSql = ` AND BTRIM(item) = ANY($${params.length}::text[])`;
     }
 
-    const result = await client.query<{ day: string; sales: string | number }>(
+    const result = await client.query<{
+      day: string;
+      sales: string | number;
+      units: string | number;
+      inventory_value: string | number;
+    }>(
       `
       SELECT
         TO_CHAR(fecha, 'YYYY-MM-DD') AS day,
-        SUM(COALESCE(venta_sin_impuesto_dia, 0))::numeric AS sales
+        SUM(COALESCE(venta_sin_impuesto_dia, 0))::numeric AS sales,
+        SUM(COALESCE(inventory_units_dia, 0))::numeric AS units,
+        SUM(COALESCE(inventory_value_dia, 0))::numeric AS inventory_value
       FROM ${table}
       WHERE LOWER(TRIM(empresa)) = LOWER(TRIM($1))
         AND LPAD(TRIM(sede_id::text), 3, '0') = LPAD(TRIM($2::text), 3, '0')
@@ -97,6 +126,8 @@ export async function loadRotacionSedeSalesTrend(input: {
     rows.map((row) => ({
       day: String(row.day ?? "").slice(0, 10),
       sales: Number(row.sales) || 0,
+      units: Number(row.units) || 0,
+      inventoryValue: Number(row.inventory_value) || 0,
     })),
   );
 }

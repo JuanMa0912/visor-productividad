@@ -6,7 +6,8 @@ import { PortalBrandingHeader } from "@/components/portal/portal-branding-header
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { canAccessPreciosProveedor } from "@/lib/shared/special-role-features";
 import { DiMultiSelect } from "@/app/analisis-de-inventario/di-multi-select";
-import { keepSelected } from "@/lib/exp-precios-proveedor/filters";
+import { keepSelected, resolveCostosSedes } from "@/lib/exp-precios-proveedor/filters";
+import { createClickVsDouble } from "@/lib/ui/click-vs-double";
 import { CostosKpis, type CostosPrevTotals } from "@/app/costos/costos-kpis";
 import { CostosRail } from "@/app/costos/costos-rail";
 import { CostosDrawer } from "@/app/costos/costos-drawer";
@@ -165,8 +166,14 @@ export default function CostosPage() {
     col: -2,
     dir: 1,
   });
-  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clickVsDoubleRef = useRef(createClickVsDouble());
   const matrixAbortRef = useRef<AbortController | null>(null);
+  const loadExpandRef = useRef<(
+    row: PreciosProveedorRow,
+    mode: "cost" | "detail",
+  ) => Promise<void>>(async () => {});
+
+  useEffect(() => () => clickVsDoubleRef.current.clear(), []);
 
   const sublineasOptions = useMemo(() => {
     const all = meta?.sublineas ?? [];
@@ -292,18 +299,10 @@ export default function CostosPage() {
       const from = override?.from ?? dateStart;
       const to = override?.to ?? dateEnd;
       if (!from || !to) return;
-      const requested = override?.sedes ?? selectedSedes;
-      const allVisible =
-        selectedEmpresas.length === 0
-          ? allSedeKeys
-          : allSedeKeys.filter((key) =>
-              selectedEmpresas.some((emp) => key.startsWith(`${emp}|`)),
-            );
-      const sedes = (requested.length > 0 ? requested : allVisible).filter(
-        (key) =>
-          selectedEmpresas.length === 0
-            ? true
-            : selectedEmpresas.some((emp) => key.startsWith(`${emp}|`)),
+      const sedes = resolveCostosSedes(
+        override?.sedes ?? selectedSedes,
+        allSedeKeys,
+        selectedEmpresas,
       );
       if (sedes.length === 0) {
         setLoading(false);
@@ -433,7 +432,12 @@ export default function CostosPage() {
       if (expandedItemId === row.id && expandRows.length > 0) {
         return;
       }
-      if (!dateStart || !dateEnd || selectedSedes.length === 0) return;
+      if (!dateStart || !dateEnd) return;
+      const sedes = resolveCostosSedes(
+        selectedSedes,
+        allSedeKeys,
+        selectedEmpresas,
+      );
       setExpandedItemId(row.id);
       setExpandRows([]);
       setExpandLoading(row.id);
@@ -445,8 +449,8 @@ export default function CostosPage() {
           label: row.label,
           from: dateStart,
           to: dateEnd,
-          sedes: selectedSedes.join(","),
         });
+        if (sedes.length > 0) params.set("sedes", sedes.join(","));
         const res = await fetch(`/api/costos?${params}`, {
           cache: "no-store",
         });
@@ -467,8 +471,18 @@ export default function CostosPage() {
         setExpandLoading(null);
       }
     },
-    [dateEnd, dateStart, expandMode, expandRows.length, expandedItemId, selectedSedes],
+    [
+      allSedeKeys,
+      dateEnd,
+      dateStart,
+      expandMode,
+      expandRows.length,
+      expandedItemId,
+      selectedEmpresas,
+      selectedSedes,
+    ],
   );
+  loadExpandRef.current = loadExpand;
 
   const loadMeta = useCallback(async () => {
     const res = await fetch("/api/costos?mode=meta", {
@@ -1158,20 +1172,16 @@ export default function CostosPage() {
                           className={`cursor-pointer select-none border-t border-slate-100 ${
                             isExpanded ? "bg-indigo-50/60" : "hover:bg-slate-50"
                           }`}
-                          onClick={() => {
-                            if (clickTimer.current) return;
-                            clickTimer.current = setTimeout(() => {
-                              clickTimer.current = null;
-                              void loadExpand(row, "cost");
-                            }, 280);
-                          }}
-                          onDoubleClick={() => {
-                            if (clickTimer.current) {
-                              clearTimeout(clickTimer.current);
-                              clickTimer.current = null;
-                            }
-                            void loadExpand(row, "detail");
-                          }}
+                          onClick={() =>
+                            clickVsDoubleRef.current.schedule(() => {
+                              void loadExpandRef.current(row, "cost");
+                            })
+                          }
+                          onDoubleClick={() =>
+                            clickVsDoubleRef.current.double(() => {
+                              void loadExpandRef.current(row, "detail");
+                            })
+                          }
                           title="Clic: proveedores y costo de entrada. Doble clic: kilos, venta y margen."
                         >
                           <th
@@ -1221,7 +1231,7 @@ Venta ${money(cell.sales)} · Costo entrada tot. ${money(cell.cost)}`
                                 expandedItemId !== row.id ||
                                 expandRows.length === 0
                               ) {
-                                void loadExpand(row, "cost");
+                                void loadExpandRef.current(row, "cost");
                               }
                             };
                             return (
@@ -1230,16 +1240,19 @@ Venta ${money(cell.sales)} · Costo entrada tot. ${money(cell.cost)}`
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    abrirPanel();
+                                    clickVsDoubleRef.current.schedule(abrirPanel);
                                   }}
-                                  onDoubleClick={(event) =>
-                                    event.stopPropagation()
-                                  }
+                                  onDoubleClick={(event) => {
+                                    event.stopPropagation();
+                                    clickVsDoubleRef.current.double(() => {
+                                      void loadExpandRef.current(row, "detail");
+                                    });
+                                  }}
                                   className="w-full cursor-pointer rounded-md px-2 py-2 text-center font-semibold tabular-nums transition-shadow hover:ring-2 hover:ring-slate-900/20"
                                   style={style}
                                   title={`${title}
 
-Clic: proveedores de esta sede`}
+Clic: proveedores de esta sede · Doble clic: $/kg, kilos y margen`}
                                 >
                                   {formatCell(cell)}
                                 </button>

@@ -185,7 +185,7 @@ import {
 } from "./restock-surtido-foto-control";
 import { RotacionGraficoBoard } from "./rotacion-grafico-board";
 import { RotacionTendenciaModal } from "./rotacion-tendencia-modal";
-import { selectRotacionTendenciaRows } from "@/lib/rotacion/tendencia-scope";
+import { selectRotacionTendenciaRows, tendenciaUsesStockDefault } from "@/lib/rotacion/tendencia-scope";
 import {
   prefetchRotacionInforme,
   RotacionInformeBoard,
@@ -271,6 +271,7 @@ export function RotacionPageInner() {
     items: string[];
     scoped: boolean;
     scopeLabel: string;
+    defaultMetric: "ventas" | "unidades" | "inventario";
   } | null>(null);
   const [surtidoAuditModalOpen, setSurtidoAuditModalOpen] = useState(false);
   const [boardView, setBoardView] = useState<"tabla" | "grafico" | "informe">(
@@ -5193,6 +5194,12 @@ export function RotacionPageInner() {
                                           : [],
                                         scoped: tendenciaScope.scoped,
                                         scopeLabel: tendenciaScope.label,
+                                        defaultMetric: tendenciaUsesStockDefault(
+                                          categoryFilter,
+                                          rowFilter,
+                                        )
+                                          ? "inventario"
+                                          : "ventas",
                                       })
                                     }
                                   >
@@ -6444,6 +6451,7 @@ export function RotacionPageInner() {
           items={tendenciaModal.items}
           scoped={tendenciaModal.scoped}
           scopeLabel={tendenciaModal.scopeLabel}
+          defaultMetric={tendenciaModal.defaultMetric}
           onClose={() => setTendenciaModal(null)}
         />
       ) : null}

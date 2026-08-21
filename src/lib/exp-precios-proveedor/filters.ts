@@ -10,6 +10,23 @@ export const keepSelected = (selected: string[], allowed: Iterable<string>) => {
   return selected.filter((id) => allow.has(id));
 };
 
+/**
+ * Vacío en sede = todas las visibles. Si hay empresa, se recorta a esas
+ * empresas. Misma regla para la matriz y para el expand (clic / doble clic).
+ */
+export const resolveCostosSedes = (
+  selectedSedes: readonly string[],
+  allSedeKeys: readonly string[],
+  selectedEmpresas: readonly string[] = [],
+): string[] => {
+  const matchesEmpresa = (key: string) =>
+    selectedEmpresas.length === 0 ||
+    selectedEmpresas.some((emp) => key.startsWith(`${emp}|`));
+  const allVisible = allSedeKeys.filter(matchesEmpresa);
+  const requested = selectedSedes.filter(matchesEmpresa);
+  return requested.length > 0 ? requested : [...allVisible];
+};
+
 export type ProveedorFilterIds = {
   oc: string[];
   tercero: string[];
