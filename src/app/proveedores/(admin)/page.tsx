@@ -6,7 +6,7 @@ import { Download, Truck } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { canAccessProveedoresBoard, canViewProveedoresQrLinks } from "@/lib/shared/special-role-features";
-import { isProveedoresQrSede, PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
+import { canonicalizeProveedoresQrSede, isProveedoresQrSede, PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import type {
   ProveedorVisitaRow,
   ProveedorVisitasMetrics,
@@ -61,11 +61,13 @@ const formatMin = (value: number | null | undefined) =>
 type QrLink = { sedeName: string; url: string; path: string; activo: boolean };
 
 const SEDE_STORAGE_KEY = "vp-proveedores-visitas-sede";
+const SEDE_ALL = "__all__";
 
 const readStoredSede = () => {
   if (typeof window === "undefined") return "";
   try {
     const saved = sessionStorage.getItem(SEDE_STORAGE_KEY);
+    if (saved === SEDE_ALL) return SEDE_ALL;
     return saved && isProveedoresQrSede(saved) ? saved : "";
   } catch {
     return "";
@@ -106,7 +108,8 @@ export default function ProveedoresBoardPage() {
   const canViewQr = canViewProveedoresQrLinks(user?.specialRoles, isAdmin);
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
-  const [sede, setSede] = useState(readStoredSede);
+  const [sede, setSede] = useState("");
+  const sedeReadyRef = useRef(false);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,18 +132,23 @@ export default function ProveedoresBoardPage() {
   }, [status, canAccessBoard, router]);
 
   useEffect(() => {
-    if (status !== "authenticated" || sede) return;
-    if (user?.sede && isProveedoresQrSede(user.sede)) {
-      setSede(user.sede);
+    if (status !== "authenticated") return;
+    if (sedeReadyRef.current) return;
+    sedeReadyRef.current = true;
+    const saved = readStoredSede();
+    if (saved === SEDE_ALL || isProveedoresQrSede(saved)) {
+      setSede(saved);
+      return;
     }
-  }, [sede, status, user?.sede]);
+    const fromUser = canonicalizeProveedoresQrSede(user?.sede);
+    if (fromUser) setSede(fromUser);
+  }, [status, user?.sede]);
 
   useEffect(() => {
+    if (!sedeReadyRef.current) return;
     try {
-      if (sede && isProveedoresQrSede(sede)) {
+      if (sede === SEDE_ALL || isProveedoresQrSede(sede)) {
         sessionStorage.setItem(SEDE_STORAGE_KEY, sede);
-      } else {
-        sessionStorage.removeItem(SEDE_STORAGE_KEY);
       }
     } catch {
       /* ignore */
@@ -188,6 +196,14 @@ export default function ProveedoresBoardPage() {
       setError("Rango de fechas inválido.");
       return;
     }
+    if (!sede) {
+      setRows([]);
+      setMetrics(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    const sedeParam = sede === SEDE_ALL ? "" : sede;
     visitasAbortRef.current?.abort();
     const controller = new AbortController();
     visitasAbortRef.current = controller;
@@ -198,7 +214,7 @@ export default function ProveedoresBoardPage() {
         dateStart,
         dateEnd,
       });
-      if (sede) params.set("sede", sede);
+      if (sedeParam) params.set("sede", sedeParam);
       if (q.trim()) params.set("q", q.trim());
       const response = await fetch(
         `/api/proveedores/visitas?${params.toString()}`,
@@ -221,7 +237,7 @@ export default function ProveedoresBoardPage() {
       const sameRange =
         data.dateStart === dateStart &&
         data.dateEnd === dateEnd &&
-        (data.sede ?? "") === sede &&
+        (data.sede ?? "") === sedeParam &&
         (data.q ?? "") === q.trim();
       if (!sameRange) return;
       setRows(data.rows ?? []);
@@ -247,9 +263,14 @@ export default function ProveedoresBoardPage() {
   useEffect(() => {
     if (status !== "authenticated" || !canAccessBoard) return;
     if (!dateStart || !dateEnd) return;
+    if (!sede) {
+      setRows([]);
+      setMetrics(null);
+      return;
+    }
     void load();
     return () => visitasAbortRef.current?.abort();
-  }, [status, canAccessBoard, dateStart, dateEnd, load]);
+  }, [status, canAccessBoard, dateStart, dateEnd, load, sede]);
 
   const exportCsv = () => {
     const params = new URLSearchParams({
@@ -257,10 +278,13 @@ export default function ProveedoresBoardPage() {
       dateStart,
       dateEnd,
     });
-    if (sede) params.set("sede", sede);
+    if (sede && sede !== SEDE_ALL) params.set("sede", sede);
     if (q.trim()) params.set("q", q.trim());
     window.open(`/api/proveedores/visitas?${params.toString()}`, "_blank");
   };
+
+  const selectedSede =
+    sede && sede !== SEDE_ALL ? canonicalizeProveedoresQrSede(sede) : null;
 
   const board = useMemo(
     () =>
@@ -269,12 +293,22 @@ export default function ProveedoresBoardPage() {
         metrics,
         dateStart,
         dateEnd,
-        sedeName: sede,
+        sedeName: selectedSede,
       }),
-    [dateEnd, dateStart, metrics, rows, sede],
+    [dateEnd, dateStart, metrics, rows, selectedSede],
   );
-  const viewRows = board.rows;
-  const viewMetrics = board.metrics;
+  const viewRows = selectedSede
+    ? board.rows.filter(
+        (row) => canonicalizeProveedoresQrSede(row.sedeName) === selectedSede,
+      )
+    : sede === SEDE_ALL
+      ? board.rows
+      : [];
+  const viewMetrics = selectedSede
+    ? board.metrics
+    : sede === SEDE_ALL
+      ? board.metrics
+      : null;
 
   const maxHourVisitas = useMemo(
     () => Math.max(1, ...(viewMetrics?.byHour.map((h) => h.visitas) ?? [1])),
@@ -477,12 +511,15 @@ export default function ProveedoresBoardPage() {
                 onChange={(e) => setSede(e.target.value)}
                 className="mt-1 block h-9 min-w-40 rounded-lg border border-slate-200 px-3 text-sm"
               >
-                <option value="">Todas las sedes</option>
+                <option value="" disabled>
+                  Seleccione sede
+                </option>
                 {PROVEEDORES_QR_SEDES.map((name) => (
                   <option key={name} value={name}>
                     {name}
                   </option>
                 ))}
+                <option value={SEDE_ALL}>Todas las sedes</option>
               </select>
             </label>
             <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -514,26 +551,34 @@ export default function ProveedoresBoardPage() {
           </div>
           {dateStart && dateEnd ? (
             <p className="mt-3 text-xs text-slate-500">
-              El conteo usa solo entradas QR del{" "}
-              <span className="font-semibold text-slate-700">
-                {formatDay(dateStart)}
-                {dateStart !== dateEnd ? ` al ${formatDay(dateEnd)}` : ""}
-              </span>
-              {sede ? (
-                <>
-                  {" "}
-                  en{" "}
-                  <span className="font-semibold text-slate-700">{sede}</span>
-                  . El detalle solo lista esa sede.
-                </>
+              {!sede ? (
+                "Elija una sede. El detalle no muestra todas juntas."
               ) : (
                 <>
-                  {" "}
-                  en{" "}
-                  <span className="font-semibold text-amber-800">
-                    todas las sedes
+                  El conteo usa solo entradas QR del{" "}
+                  <span className="font-semibold text-slate-700">
+                    {formatDay(dateStart)}
+                    {dateStart !== dateEnd ? ` al ${formatDay(dateEnd)}` : ""}
                   </span>
-                  , no en una sola. Elige Floresta (u otra) para ver solo esa.
+                  {selectedSede ? (
+                    <>
+                      {" "}
+                      en{" "}
+                      <span className="font-semibold text-slate-700">
+                        {selectedSede}
+                      </span>
+                      . El detalle lista únicamente esa sede.
+                    </>
+                  ) : (
+                    <>
+                      {" "}
+                      en{" "}
+                      <span className="font-semibold text-amber-800">
+                        todas las sedes
+                      </span>
+                      .
+                    </>
+                  )}
                 </>
               )}
             </p>
@@ -752,18 +797,30 @@ export default function ProveedoresBoardPage() {
                       Cargando visitas…
                     </td>
                   </tr>
+                ) : !sede ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-3 py-8 text-center text-slate-500"
+                    >
+                      Seleccione una sede para ver el detalle.
+                    </td>
+                  </tr>
                 ) : viewRows.length === 0 ? (
                   <tr>
                     <td
                       colSpan={7}
                       className="px-3 py-8 text-center text-slate-500"
                     >
-                      Sin visitas en el rango.
+                      Sin visitas en esa sede y rango.
                     </td>
                   </tr>
                 ) : (
                   viewRows.map((row) => (
-                    <tr key={row.id} className="border-t border-slate-100">
+                    <tr
+                      key={`${row.sedeName}-${row.id}`}
+                      className="border-t border-slate-100"
+                    >
                       <td className="px-3 py-2.5 font-medium text-slate-800">
                         {row.sedeName}
                       </td>

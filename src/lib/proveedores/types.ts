@@ -18,6 +18,19 @@ export type ProveedoresQrSede = (typeof PROVEEDORES_QR_SEDES)[number];
 export const isProveedoresQrSede = (value: string): value is ProveedoresQrSede =>
   (PROVEEDORES_QR_SEDES as readonly string[]).includes(value);
 
+/** Acepta mayúsculas/espacios y devuelve el nombre canónico QR, o null. */
+export const canonicalizeProveedoresQrSede = (
+  raw: string | null | undefined,
+): ProveedoresQrSede | null => {
+  const key = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  if (!key) return null;
+  return (
+    PROVEEDORES_QR_SEDES.find((name) => name.toLowerCase() === key) ?? null
+  );
+};
+
 export const normalizeVisitanteCedula = (raw: unknown): string => {
   const digits = String(raw ?? "").replace(/\D/g, "");
   return digits.replace(/^0+/, "") || digits;

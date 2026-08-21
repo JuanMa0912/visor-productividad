@@ -7,6 +7,7 @@ import {
 } from "@/lib/proveedores/qr-tables";
 import { qrVisitaCierreJornadaSql } from "@/lib/proveedores/visitas-jornada";
 import {
+  canonicalizeProveedoresQrSede,
   decodeProveedorPosKey,
   encodeProveedorPosKey,
   isValidProveedorToken,
@@ -387,9 +388,10 @@ const mapVisitaRow = (row: Record<string, unknown>): ProveedorVisitaRow => {
   }
   const codigo = row.proveedor_codigo == null ? null : String(row.proveedor_codigo);
   const empresa = row.proveedor_empresa == null ? null : String(row.proveedor_empresa);
+  const sedeRaw = String(row.sede_name ?? "");
   return {
     id: Number(row.id),
-    sedeName: String(row.sede_name ?? ""),
+    sedeName: canonicalizeProveedoresQrSede(sedeRaw) ?? sedeRaw.trim(),
     proveedorId:
       codigo && empresa ? encodeProveedorPosKey(empresa, codigo) : codigo,
     proveedorNombre: String(row.proveedor_nombre ?? ""),

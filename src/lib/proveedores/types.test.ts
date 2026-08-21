@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  canonicalizeProveedoresQrSede,
   decodeProveedorPosKey,
   encodeProveedorPosKey,
   isAcceptedDatosAutorizacion,
@@ -11,6 +12,11 @@ import {
 } from "@/lib/proveedores/types";
 
 describe("proveedores types", () => {
+  it("normaliza sede QR sin importar mayúsculas ni espacios", () => {
+    assert.equal(canonicalizeProveedoresQrSede(" floresta "), "Floresta");
+    assert.equal(canonicalizeProveedoresQrSede("BOGOTA"), "Bogota");
+    assert.equal(canonicalizeProveedoresQrSede("Dinastia"), null);
+  });
   it("normaliza cédula a dígitos", () => {
     assert.equal(normalizeVisitanteCedula("1.234.567"), "1234567");
     assert.equal(isValidVisitanteCedula("123456"), true);

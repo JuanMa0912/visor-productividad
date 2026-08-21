@@ -1,4 +1,5 @@
 import { PROVEEDORES_VISITAS_TZ } from "@/lib/proveedores/board-filters";
+import { canonicalizeProveedoresQrSede } from "@/lib/proveedores/types";
 import type {
   ProveedorVisitaRow,
   ProveedorVisitasMetrics,
@@ -24,8 +25,10 @@ export const rowMatchesVisitasScope = (
 ): boolean => {
   const dia = visitaEntradaIsoDateBogota(row.entradaAt);
   if (!dia || dia < args.dateStart || dia > args.dateEnd) return false;
-  const sede = (args.sedeName ?? "").trim();
-  if (sede && row.sedeName !== sede) return false;
+  const wanted = canonicalizeProveedoresQrSede(args.sedeName);
+  if (wanted && canonicalizeProveedoresQrSede(row.sedeName) !== wanted) {
+    return false;
+  }
   return true;
 };
 

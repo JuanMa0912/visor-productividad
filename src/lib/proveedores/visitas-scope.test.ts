@@ -63,6 +63,13 @@ describe("proveedores visitas-scope", () => {
       ),
       false,
     );
+    assert.equal(
+      rowMatchesVisitasScope(
+        row({ entradaAt: "2026-08-20T15:00:00.000Z" }),
+        { ...scope, sedeName: " floresta " },
+      ),
+      true,
+    );
   });
 
   it("si el API trae otras sedes, Floresta no las pinta ni las cuenta", () => {

@@ -6,7 +6,7 @@ import {
 import { getDbPool } from "@/lib/db";
 import { queryLastProveedoresDataDate } from "@/lib/proveedores/board-filters";
 import { listSedeQrTokens, listVisitas, computeVisitasMetrics, sanitizeQrVisitasJornada } from "@/lib/proveedores/repo";
-import { PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
+import { canonicalizeProveedoresQrSede, PROVEEDORES_QR_SEDES } from "@/lib/proveedores/types";
 import { getLocalPortalCloudUrl } from "@/lib/shared/local-portal-notices";
 import { checkRateLimit } from "@/lib/shared/rate-limit";
 import {
@@ -116,7 +116,8 @@ export async function GET(request: Request) {
         ),
       );
     }
-    if (sede && !(PROVEEDORES_QR_SEDES as readonly string[]).includes(sede)) {
+    const sedeCanon = canonicalizeProveedoresQrSede(sede);
+    if (sede && !sedeCanon) {
       return withSession(
         NextResponse.json({ error: "Sede no válida." }, { status: 400 }),
       );
@@ -125,7 +126,7 @@ export async function GET(request: Request) {
     const filter = {
       dateStart,
       dateEnd,
-      sedeName: sede,
+      sedeName: sedeCanon,
       q,
     };
     const sanitized = await sanitizeQrVisitasJornada(client);
@@ -181,7 +182,7 @@ export async function GET(request: Request) {
       NextResponse.json({
         dateStart,
         dateEnd,
-        sede,
+        sede: sedeCanon,
         q,
         metrics,
         rows,
