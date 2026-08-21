@@ -27,6 +27,7 @@ import {
 } from "@/lib/informe-variacion/payload-std-server";
 import { canAccessInformeVariacion } from "@/lib/shared/special-role-features";
 import { ensureInformeProveedores } from "@/lib/informe-variacion/proveedores";
+import { ensureInformeMarcas } from "@/lib/informe-variacion/marcas";
 import { resolveSessionLineCategoryScope } from "@/lib/shared/line-category-scope";
 import {
   resolveDataSourceKind,
@@ -297,9 +298,10 @@ export async function GET(request: Request) {
             lineScope,
           );
           const withProv = await ensureInformeProveedores(stdClient, cleaned);
-          setCachedInformePayload(cacheKey, withProv);
+          const withLookups = await ensureInformeMarcas(stdClient, withProv);
+          setCachedInformePayload(cacheKey, withLookups);
           return withSession(
-            NextResponse.json(withProv, {
+            NextResponse.json(withLookups, {
               headers: {
                 "Cache-Control": CACHE_CONTROL,
                 "X-Data-Source": "payload-std",
@@ -472,9 +474,10 @@ export async function GET(request: Request) {
           lineScope,
         );
         const withProv = await ensureInformeProveedores(stdClient, cleaned);
-        setCachedInformePayload(cacheKey, withProv);
+        const withLookups = await ensureInformeMarcas(stdClient, withProv);
+        setCachedInformePayload(cacheKey, withLookups);
         return withSession(
-          NextResponse.json(withProv, {
+          NextResponse.json(withLookups, {
             headers: {
               "Cache-Control": CACHE_CONTROL,
               "X-Data-Source": "payload-std",

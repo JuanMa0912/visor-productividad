@@ -55,6 +55,10 @@ export type InformeRankingRow = {
   label: string;
   total: PeriodTriple;
   perSede: PeriodTriple[];
+  /** Solo dimensión ítem: unidades / ventas / margen pesos del periodo actual. */
+  perSedeUnits?: number[];
+  perSedeSales?: number[];
+  perSedeMargin?: number[];
 };
 
 export type InformeEmpresaSummaryRow = {
@@ -146,9 +150,19 @@ export const buildInformeRankingRows = ({
   const keyIndex = keyIndexForDimension(dimension);
   const labels = labelsForDimension(payload, dimension);
   const sedeCount = payload.sedes.length;
-  const buckets = new Map<number, { total: PeriodTriple; perSede: PeriodTriple[] }>();
+  const buckets = new Map<
+    number,
+    {
+      total: PeriodTriple;
+      perSede: PeriodTriple[];
+      perSedeUnits?: number[];
+      perSedeSales?: number[];
+      perSedeMargin?: number[];
+    }
+  >();
   const cappedLimit = clampInformeRankingLimit(limit);
   const dir = sort.dir < 0 ? -1 : 1;
+  const trackItemDetail = dimension === "item";
 
   for (const row of payload.rows) {
     if (!pass(row)) continue;
@@ -158,6 +172,13 @@ export const buildInformeRankingRows = ({
       bucket = {
         total: emptyTriple(),
         perSede: Array.from({ length: sedeCount }, () => emptyTriple()),
+        ...(trackItemDetail
+          ? {
+              perSedeUnits: Array.from({ length: sedeCount }, () => 0),
+              perSedeSales: Array.from({ length: sedeCount }, () => 0),
+              perSedeMargin: Array.from({ length: sedeCount }, () => 0),
+            }
+          : {}),
       };
       buckets.set(key, bucket);
     }
@@ -173,6 +194,12 @@ export const buildInformeRankingRows = ({
     );
     addTriple(bucket.total, triple);
     addTriple(bucket.perSede[row[0]]!, triple);
+    if (trackItemDetail) {
+      const sede = row[0];
+      bucket.perSedeUnits![sede] += row[5];
+      bucket.perSedeSales![sede] += row[8];
+      bucket.perSedeMargin![sede] += row[11];
+    }
   }
 
   const rows = [...buckets.entries()].map(([key, bucket]) => ({
@@ -180,6 +207,9 @@ export const buildInformeRankingRows = ({
     label: labels[key] ?? `#${key}`,
     total: bucket.total,
     perSede: bucket.perSede,
+    perSedeUnits: bucket.perSedeUnits,
+    perSedeSales: bucket.perSedeSales,
+    perSedeMargin: bucket.perSedeMargin,
   }));
 
   rows.sort((a, b) => {
@@ -231,5 +261,61 @@ export const buildInformeEmpresaSummary = ({
         share: grand > 0 ? total[0] / grand : 0,
       },
     ];
+  });
+};
+
+export type InformeAbcdLetter = "A" | "B" | "C" | "D";
+
+/** Mismos umbrales Pareto que Rotación (A 70 / B 85 / C 98). */
+const INFORME_ABCD_A = 70;
+const INFORME_ABCD_B = 85;
+const INFORME_ABCD_C = 98;
+
+const letterForCumulative = (pct: number): InformeAbcdLetter => {
+  if (pct <= INFORME_ABCD_A) return "A";
+  if (pct <= INFORME_ABCD_B) return "B";
+  if (pct <= INFORME_ABCD_C) return "C";
+  return "D";
+};
+
+/**
+ * ABCD por ítem dentro de cada sede, con ventas actuales (v_cur) del conjunto
+ * que pasa el filtro. Índice `[sede][itemIndex]`.
+ */
+export const buildInformeItemAbcdBySede = ({
+  payload,
+  pass,
+}: {
+  payload: Prepared;
+  pass: (row: Prepared["rows"][number]) => boolean;
+}): Array<Map<number, InformeAbcdLetter>> => {
+  const sedeCount = payload.sedes.length;
+  const salesBySede: Array<Map<number, number>> = Array.from(
+    { length: sedeCount },
+    () => new Map(),
+  );
+  for (const row of payload.rows) {
+    if (!pass(row)) continue;
+    const sales = row[8];
+    if (!(sales > 0)) continue;
+    const sedeMap = salesBySede[row[0]];
+    if (!sedeMap) continue;
+    sedeMap.set(row[4], (sedeMap.get(row[4]) ?? 0) + sales);
+  }
+
+  return salesBySede.map((salesByItem) => {
+    const ranked = [...salesByItem.entries()].sort((a, b) => b[1] - a[1]);
+    const total = ranked.reduce((sum, [, sales]) => sum + sales, 0);
+    const letters = new Map<number, InformeAbcdLetter>();
+    let cumulative = 0;
+    for (const [item, sales] of ranked) {
+      if (total <= 0) {
+        letters.set(item, "D");
+        continue;
+      }
+      cumulative += sales;
+      letters.set(item, letterForCumulative((cumulative / total) * 100));
+    }
+    return letters;
   });
 };

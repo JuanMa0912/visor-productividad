@@ -18,6 +18,7 @@ const basePayload = (): InformeVariacionPayload => ({
   itemIds: ["10", "20", "30"],
   provs: ["(Sin proveedor)", "Avicola", "Fruver SA"],
   itemProv: [1, 2, 2],
+  itemMarca: [2, 1, 1],
   ums: ["UND", "KG", "L"],
   rows: [
     // sede, cat, lin, sub, item, u*, v*, m*
@@ -47,6 +48,7 @@ describe("filterInformePayloadForLineScope", () => {
     assert.equal(next.rows.length, 1);
     assert.deepEqual(next.itemIds, ["10"]);
     assert.deepEqual(next.itemProv, [1]);
+    assert.deepEqual(next.itemMarca, [2]);
   });
 
   it("sin alcance no modifica", () => {

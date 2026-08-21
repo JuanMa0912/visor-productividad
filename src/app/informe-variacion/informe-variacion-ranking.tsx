@@ -9,14 +9,17 @@ import {
   computeVariationPct,
   formatInformePct,
   formatInformeValue,
+  formatMargenPct,
   heatmapCellStyle,
 } from "@/lib/informe-variacion/format";
 import {
   INFORME_RANKING_DIMENSIONS,
   INFORME_RANKING_LIMITS,
   buildInformeEmpresaSummary,
+  buildInformeItemAbcdBySede,
   buildInformeRankingRows,
   clampInformeRankingLimit,
+  type InformeAbcdLetter,
   type InformeRankingDimension,
   type InformeRankingSortCol,
   type InformeRankingTableSort,
@@ -41,6 +44,18 @@ type RankingProps = {
   mode: "yoy" | "mom";
   onModeChange: (mode: "yoy" | "mom") => void;
   pass: (row: Prepared["rows"][number]) => boolean;
+};
+
+const ABCD_BADGE_CLASS: Record<InformeAbcdLetter, string> = {
+  A: "bg-emerald-600 text-white",
+  B: "bg-sky-600 text-white",
+  C: "bg-amber-500 text-white",
+  D: "bg-slate-500 text-white",
+};
+
+const formatUnitPrice = (sales: number, units: number): string | null => {
+  if (!(units > 0) || !(sales > 0)) return null;
+  return `$${Math.round(sales / units).toLocaleString("es-CO")}`;
 };
 
 const MiniToggle = ({
@@ -134,6 +149,13 @@ export function InformeRankingTable({
       }),
     [dimension, limit, metric, pass, payload, sort],
   );
+  const abcdBySede = useMemo(
+    () =>
+      dimension === "item"
+        ? buildInformeItemAbcdBySede({ payload, pass })
+        : null,
+    [dimension, pass, payload],
+  );
 
   const toggleRankingSort = (col: InformeRankingSortCol) => {
     onSortChange({
@@ -201,8 +223,9 @@ export function InformeRankingTable({
         {INFORME_RANKING_DIMENSIONS.find((item) => item.id === dimension)?.label.toLowerCase()}{" "}
         × sede. Clic en una columna para mayor/menor. Las sedes van en el orden
         del portal, sin código al inicio. Categoría es el tipo comercial.
-        Empresa (proveedor) sale del maestro. Los filtros de estructura de
-        arriba aplican a este ranking.
+        Empresa (proveedor) y marca salen del maestro POS. Los filtros de
+        estructura de arriba aplican a este ranking. En ítem, cada sede muestra
+        precio, margen y la letra ABCD (Pareto de ventas de esa sede).
       </p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] border-collapse text-sm">
@@ -280,17 +303,52 @@ export function InformeRankingTable({
                   const previous = values[1];
                   const pct = computeVariationPct(values[0], previous);
                   const style = heatmapCellStyle(pct, false);
+                  const abcd =
+                    dimension === "item"
+                      ? (abcdBySede?.[sedeIndex]?.get(row.key) ?? null)
+                      : null;
+                  const units = row.perSedeUnits?.[sedeIndex] ?? 0;
+                  const sales = row.perSedeSales?.[sedeIndex] ?? 0;
+                  const margin = row.perSedeMargin?.[sedeIndex] ?? 0;
+                  const unitPrice =
+                    dimension === "item" ? formatUnitPrice(sales, units) : null;
+                  const marginLabel =
+                    dimension === "item" ? formatMargenPct(sales, margin) : null;
                   return (
                     <td
                       key={sedeIndex}
                       className="px-1 py-1 text-center text-[11px] tabular-nums"
                       style={style}
                     >
-                      <div className="font-semibold">
-                        {formatInformeValue(values[0], metric)}
-                      </div>
-                      <div className="opacity-90">
-                        {formatInformePct(pct)}
+                      <div className="inline-flex items-start justify-center gap-1">
+                        <div>
+                          <div className="font-semibold">
+                            {formatInformeValue(values[0], metric)}
+                          </div>
+                          {dimension === "item" ? (
+                            <div className="flex flex-wrap items-center justify-center gap-x-1 text-[9px] leading-tight opacity-90">
+                              {unitPrice ? <span>{unitPrice}</span> : null}
+                              {marginLabel && marginLabel !== "—" ? (
+                                <span>{marginLabel}</span>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="opacity-90">
+                              {formatInformePct(pct)}
+                            </div>
+                          )}
+                        </div>
+                        {abcd ? (
+                          <span
+                            className={cn(
+                              "mt-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded px-0.5 text-[9px] font-bold leading-none",
+                              ABCD_BADGE_CLASS[abcd],
+                            )}
+                            title={`ABCD ${abcd} en esta sede`}
+                          >
+                            {abcd}
+                          </span>
+                        ) : null}
                       </div>
                     </td>
                   );

@@ -124,6 +124,7 @@ function InformeVariacionBoardReady({
         prepared.sedeEmpresas,
         prepared.itemsLow,
         prepared.itemProv,
+        prepared.itemMarca,
       ),
     [deferredFilters, prepared],
   );
@@ -883,6 +884,7 @@ function InformeFilters({
       payload.sedeEmpresas,
       payload.itemsLow,
       payload.itemProv,
+      payload.itemMarca,
     );
     const allowed = new Set<number>();
     for (const row of payload.rows) {
@@ -903,6 +905,7 @@ function InformeFilters({
       payload.sedeEmpresas,
       payload.itemsLow,
       payload.itemProv,
+      payload.itemMarca,
     );
     const allowed = new Set<number>();
     for (const row of payload.rows) {
@@ -916,6 +919,28 @@ function InformeFilters({
       }));
   }, [filters, payload]);
 
+  const marcaOptions = useMemo(() => {
+    const labels = payload.marcas ?? [];
+    if (labels.length === 0) return [];
+    const matcher = compileInformeRowFilter(
+      { ...filters, marca: [] },
+      payload.sedeEmpresas,
+      payload.itemsLow,
+      payload.itemProv,
+      payload.itemMarca,
+    );
+    const allowed = new Set<number>();
+    for (const row of payload.rows) {
+      if (matcher(row)) allowed.add(payload.itemMarca?.[row[4]] ?? 0);
+    }
+    return [...allowed]
+      .sort((a, b) => (labels[a] ?? "").localeCompare(labels[b] ?? "", "es"))
+      .map((value) => ({
+        value: String(value),
+        label: labels[value] ?? `Marca ${value}`,
+      }));
+  }, [filters, payload]);
+
   return (
     <section className="rounded-xl border border-l-4 border-l-blue-600 border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -924,7 +949,7 @@ function InformeFilters({
           Limpiar filtros
         </button>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         <DiMultiSelect
           label="Compañía"
           values={filters.emp}
@@ -987,6 +1012,17 @@ function InformeFilters({
             emptyLabel="Todos"
             searchable
             onChange={(prov) => onChange({ prov })}
+          />
+        ) : null}
+        {payload.marcas && payload.marcas.length > 0 ? (
+          <DiMultiSelect
+            label="Marca"
+            values={filters.marca}
+            options={marcaOptions}
+            emptyLabel="Todas"
+            searchable
+            searchPlaceholder="Buscar marca…"
+            onChange={(marca) => onChange({ marca })}
           />
         ) : null}
         <DiMultiSelect

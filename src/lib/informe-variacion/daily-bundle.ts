@@ -24,6 +24,7 @@ import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 import { filterInformePayloadForLineScope } from "@/lib/informe-variacion/informe-line-scope";
 import { applyInformeDayRangeProjection } from "@/lib/informe-variacion/projection";
 import { ensureInformeProveedoresOnMap } from "@/lib/informe-variacion/proveedores";
+import { ensureInformeMarcasOnMap } from "@/lib/informe-variacion/marcas";
 import { resolveUserLineCategoryScope } from "@/lib/shared/line-category-scope";
 
 export type InformeDailyDbRow = {
@@ -504,6 +505,10 @@ export const loadInformeVariacionMonthBundle = async (
     };
   }
   const payloadsWithProv = await ensureInformeProveedoresOnMap(client, payloads);
+  const payloadsWithLookups = await ensureInformeMarcasOnMap(
+    client,
+    payloadsWithProv,
+  );
   const buildMs = Date.now() - buildStarted;
 
   return {
@@ -511,7 +516,7 @@ export const loadInformeVariacionMonthBundle = async (
       bundle: true,
       year,
       month,
-      payloads: payloadsWithProv,
+      payloads: payloadsWithLookups,
       rangeIds: availableRanges.map((range) => range.id),
     },
     stats: {

@@ -733,7 +733,7 @@ export default function InformeVariacionPage() {
             </h1>
             <p className="text-sm text-slate-500">
               Compañía → Sede → Categoría → Línea → Sublínea → Ítem, con
-              empresa (proveedor). Cortes Excel, comparativo libre y ranking.
+              empresa (proveedor) y marca. Cortes Excel, comparativo libre y ranking.
             </p>
           </div>
         </div>

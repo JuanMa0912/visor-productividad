@@ -126,6 +126,9 @@ export const filterInformePayloadForLineScope = (
   const itemProv = payload.itemProv
     ? items.map((_, newIdx) => payload.itemProv?.[oldItemByNew.get(newIdx) ?? -1] ?? 0)
     : undefined;
+  const itemMarca = payload.itemMarca
+    ? items.map((_, newIdx) => payload.itemMarca?.[oldItemByNew.get(newIdx) ?? -1] ?? 0)
+    : undefined;
 
   return {
     ...payload,
@@ -135,6 +138,7 @@ export const filterInformePayloadForLineScope = (
     items,
     itemIds,
     itemProv,
+    itemMarca,
     ums,
     rows,
     meta: {

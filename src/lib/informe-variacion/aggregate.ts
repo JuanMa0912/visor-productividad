@@ -77,6 +77,7 @@ export const compileInformeRowFilter = (
   sedeEmpresas: string[],
   itemsLow: string[],
   itemProv?: number[],
+  itemMarca?: number[],
 ): ((row: InformeCompactRow) => boolean) => {
   const emp = filters.emp.length > 0 ? new Set(filters.emp) : null;
   const sede = toIdSet(filters.sede);
@@ -85,6 +86,7 @@ export const compileInformeRowFilter = (
   const sub = toIdSet(filters.sub);
   const item = toIdSet(filters.item);
   const prov = toIdSet(filters.prov);
+  const marca = toIdSet(filters.marca);
   const query = filters.q;
 
   return (row) => {
@@ -95,6 +97,7 @@ export const compileInformeRowFilter = (
     if (sub && !sub.has(row[3])) return false;
     if (item && !item.has(row[4])) return false;
     if (prov && !prov.has(itemProv?.[row[4]] ?? 0)) return false;
+    if (marca && !marca.has(itemMarca?.[row[4]] ?? 0)) return false;
     if (query && !itemsLow[row[4]]?.includes(query)) return false;
     return true;
   };
@@ -106,8 +109,15 @@ export const passInformeRowFilter = (
   sedeEmpresas: string[],
   itemsLow: string[],
   itemProv?: number[],
+  itemMarca?: number[],
 ): boolean =>
-  compileInformeRowFilter(filters, sedeEmpresas, itemsLow, itemProv)(row);
+  compileInformeRowFilter(
+    filters,
+    sedeEmpresas,
+    itemsLow,
+    itemProv,
+    itemMarca,
+  )(row);
 
 export const aggregateBySede = (
   rows: InformeCompactRow[],
@@ -262,6 +272,7 @@ export const hasActiveInformeFilters = (filters: InformeGlobalFilters) =>
       filters.sub.length ||
       filters.item.length ||
       filters.prov.length ||
+      filters.marca.length ||
       filters.q,
   );
 

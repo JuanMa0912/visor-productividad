@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { prepareInformeData } from "@/lib/informe-variacion/aggregate";
 import {
   buildInformeEmpresaSummary,
+  buildInformeItemAbcdBySede,
   buildInformeRankingRows,
   clampInformeRankingLimit,
 } from "@/lib/informe-variacion/ranking";
@@ -44,6 +45,9 @@ describe("buildInformeRankingRows", () => {
     assert.equal(rows[0]?.label, "Pollo entero");
     assert.equal(rows[0]?.total[0], 200);
     assert.equal(rows[0]?.perSede[0]?.[0], 200);
+    assert.equal(rows[0]?.perSedeSales?.[0], 200);
+    assert.equal(rows[0]?.perSedeUnits?.[0], 100);
+    assert.equal(rows[0]?.perSedeMargin?.[0], 40);
     assert.equal(rows[1]?.label, "Pollo entero premium");
   });
 
@@ -153,5 +157,30 @@ describe("buildInformeEmpresaSummary", () => {
     assert.equal(summary[0]?.total[0], 240);
     assert.equal(summary[1]?.label, "Mercamio");
     assert.ok(Math.abs(summary[0]!.share - 240 / 360) < 0.0001);
+  });
+});
+
+describe("buildInformeItemAbcdBySede", () => {
+  it("asigna A-B-C-D por Pareto de ventas del periodo actual en cada sede", () => {
+    const payload = prepareInformeData({
+      ...samplePayload(),
+      items: ["A", "B", "C", "D"],
+      ums: ["UND", "UND", "UND", "UND"],
+      rows: [
+        [0, 0, 0, 0, 0, 1, 0, 0, 70, 0, 0, 7, 0, 0],
+        [0, 0, 0, 0, 1, 1, 0, 0, 15, 0, 0, 2, 0, 0],
+        [0, 0, 0, 0, 2, 1, 0, 0, 13, 0, 0, 1, 0, 0],
+        [0, 0, 0, 0, 3, 1, 0, 0, 2, 0, 0, 0, 0, 0],
+      ],
+    });
+    const letters = buildInformeItemAbcdBySede({
+      payload,
+      pass: () => true,
+    });
+    assert.equal(letters[0]?.get(0), "A");
+    assert.equal(letters[0]?.get(1), "B");
+    assert.equal(letters[0]?.get(2), "C");
+    assert.equal(letters[0]?.get(3), "D");
+    assert.equal(letters[1]?.size, 0);
   });
 });

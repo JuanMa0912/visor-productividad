@@ -53,6 +53,10 @@ export type InformeVariacionPayload = {
   provs?: string[];
   /** Índice de proveedor por ítem (`items[i]` → `provs[itemProv[i]]`). */
   itemProv?: number[];
+  /** Nombres de marca comercial (`proveedor_item.marca`), índice 0 = sin marca. */
+  marcas?: string[];
+  /** Índice de marca por ítem (`items[i]` → `marcas[itemMarca[i]]`). */
+  itemMarca?: number[];
   ums: string[];
   rows: InformeCompactRow[];
   meta: {
@@ -86,6 +90,8 @@ export type InformeGlobalFilters = {
   item: string[];
   /** Índices en `payload.provs`. */
   prov: string[];
+  /** Índices en `payload.marcas`. */
+  marca: string[];
   q: string;
 };
 
@@ -104,5 +110,6 @@ export const EMPTY_INFORME_FILTERS: InformeGlobalFilters = {
   sub: [],
   item: [],
   prov: [],
+  marca: [],
   q: "",
 };

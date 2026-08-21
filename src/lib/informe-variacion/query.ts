@@ -37,6 +37,7 @@ import {
 import { filterInformePayloadForLineScope } from "@/lib/informe-variacion/informe-line-scope";
 import { applyInformeDayRangeProjection } from "@/lib/informe-variacion/projection";
 import { attachInformeProveedores } from "@/lib/informe-variacion/proveedores";
+import { attachInformeMarcas } from "@/lib/informe-variacion/marcas";
 import { resolveUserLineCategoryScope } from "@/lib/shared/line-category-scope";
 import { getInformePayloadStd } from "@/lib/informe-variacion/payload-std-server";
 import {
@@ -786,16 +787,24 @@ const decorateInformePayload = async (
     ),
   };
   const filtered = filterInformePayloadForLineScope(payload, lineScope);
-  const withProveedores = await attachInformeProveedores(client, filtered);
+  const [withProveedores, withMarcas] = await Promise.all([
+    attachInformeProveedores(client, filtered),
+    attachInformeMarcas(client, filtered),
+  ]);
+  const decorated = {
+    ...withProveedores,
+    marcas: withMarcas.marcas,
+    itemMarca: withMarcas.itemMarca,
+  };
   const withMeta = options.ranges
     ? {
-        ...withProveedores,
+        ...decorated,
         meta: {
-          ...withProveedores.meta,
+          ...decorated.meta,
           rangeKey: informeRangeCacheKey(options.ranges),
         },
       }
-    : attachDayRangeMeta(withProveedores, options.dayRange);
+    : attachDayRangeMeta(decorated, options.dayRange);
   if (!options.dayRange || year == null || month == null) return withMeta;
   return applyInformeDayRangeProjection(
     withMeta,

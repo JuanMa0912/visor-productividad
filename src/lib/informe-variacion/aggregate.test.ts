@@ -84,5 +84,41 @@ describe("hasActiveInformeFilters", () => {
       hasActiveInformeFilters({ ...EMPTY_INFORME_FILTERS, emp: ["Mercamio"] }),
       true,
     );
+    assert.equal(
+      hasActiveInformeFilters({ ...EMPTY_INFORME_FILTERS, marca: ["1"] }),
+      true,
+    );
+  });
+});
+
+describe("passInformeRowFilter marca", () => {
+  it("filtra por indice de marca del item", () => {
+    const sedeEmpresas = ["Comercializadora"];
+    const itemsLow = ["leche", "pan"];
+    const itemProv = [0, 0];
+    const itemMarca = [1, 2];
+    const row = r(0, 3, 8, 1, 0, 1, 1, 1, 10, 10, 10);
+    assert.equal(
+      passInformeRowFilter(
+        row,
+        { ...EMPTY_INFORME_FILTERS, marca: ["1"] },
+        sedeEmpresas,
+        itemsLow,
+        itemProv,
+        itemMarca,
+      ),
+      true,
+    );
+    assert.equal(
+      passInformeRowFilter(
+        row,
+        { ...EMPTY_INFORME_FILTERS, marca: ["2"] },
+        sedeEmpresas,
+        itemsLow,
+        itemProv,
+        itemMarca,
+      ),
+      false,
+    );
   });
 });
