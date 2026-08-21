@@ -1,10 +1,30 @@
 import type { ClientBase } from "pg";
+import { isCriterioDepartamentoProveedorLabel } from "@/lib/informe-variacion/proveedores";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 
 export const INFORME_SIN_MARCA_LABEL = "(Sin marca)";
 
 const itemCodeFromLabel = (label: string): string =>
   (label.trim().split(/\s+/)[0] ?? "").trim();
+
+export const isInformeDepartamentoMarcaLabel = (label: string): boolean =>
+  isCriterioDepartamentoProveedorLabel(label);
+
+export const pickInformeMarcaLabel = (
+  candidates: Array<{ label: string; hits: number }>,
+): string | null => {
+  const usable = candidates.filter(
+    (candidate) =>
+      candidate.label.trim() &&
+      !isInformeDepartamentoMarcaLabel(candidate.label),
+  );
+  if (usable.length === 0) return null;
+  usable.sort((a, b) => {
+    if (b.hits !== a.hits) return b.hits - a.hits;
+    return a.label.localeCompare(b.label, "es");
+  });
+  return usable[0]?.label.trim() || null;
+};
 
 const probeProveedorItemTable = async (client: ClientBase): Promise<boolean> => {
   const result = await client.query<{ ok: boolean }>(`
@@ -17,7 +37,8 @@ const probeProveedorItemTable = async (client: ClientBase): Promise<boolean> => 
 };
 
 /**
- * Marca comercial más frecuente por ítem (`proveedor_item.marca`), igual que Costos.
+ * Marca comercial más frecuente por ítem (`proveedor_item.marca`).
+ * Omite criterios POS de departamento (MERCAMIO FRUVER, MERCAMIO CARNES ROJAS).
  */
 const lookupMarcaByItemIds = async (
   client: ClientBase,
@@ -28,32 +49,38 @@ const lookupMarcaByItemIds = async (
   if (ids.length === 0) return out;
   if (!(await probeProveedorItemTable(client))) return out;
 
-  const result = await client.query<{ id_item: string; marca: string }>(
+  const result = await client.query<{
+    id_item: string;
+    marca: string;
+    hits: string | number;
+  }>(
     `
-    WITH ranked AS (
-      SELECT
-        BTRIM(pi.id_item) AS id_item,
-        BTRIM(pi.marca) AS marca,
-        COUNT(*)::int AS hits
-      FROM proveedor_item pi
-      WHERE BTRIM(pi.id_item) = ANY($1::text[])
-        AND NULLIF(BTRIM(COALESCE(pi.marca, '')), '') IS NOT NULL
-      GROUP BY 1, 2
-    )
-    SELECT DISTINCT ON (id_item)
-      id_item,
-      marca
-    FROM ranked
-    ORDER BY id_item, hits DESC, marca ASC
+    SELECT
+      BTRIM(pi.id_item) AS id_item,
+      BTRIM(pi.marca) AS marca,
+      COUNT(*)::int AS hits
+    FROM proveedor_item pi
+    WHERE BTRIM(pi.id_item) = ANY($1::text[])
+      AND NULLIF(BTRIM(COALESCE(pi.marca, '')), '') IS NOT NULL
+    GROUP BY 1, 2
     `,
     [ids],
   );
 
+  const byItem = new Map<string, Array<{ label: string; hits: number }>>();
   for (const row of result.rows ?? []) {
     const id = String(row.id_item ?? "").trim();
     const marca = String(row.marca ?? "").trim();
     if (!id || !marca) continue;
-    out.set(id, marca);
+    const list = byItem.get(id) ?? [];
+    list.push({ label: marca, hits: Number(row.hits) || 0 });
+    byItem.set(id, list);
+  }
+
+  for (const [id, candidates] of byItem) {
+    const picked = pickInformeMarcaLabel(candidates);
+    if (!picked) continue;
+    out.set(id, picked);
   }
   return out;
 };
@@ -103,10 +130,7 @@ export const informePayloadHasMarcas = (
 export const ensureInformeMarcas = async (
   client: ClientBase,
   payload: InformeVariacionPayload,
-): Promise<InformeVariacionPayload> => {
-  if (informePayloadHasMarcas(payload)) return payload;
-  return attachInformeMarcas(client, payload);
-};
+): Promise<InformeVariacionPayload> => attachInformeMarcas(client, payload);
 
 export const ensureInformeMarcasOnMap = async (
   client: ClientBase,
