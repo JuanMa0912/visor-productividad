@@ -13,6 +13,7 @@ import type {
 } from "@/lib/proveedores/types";
 import { ProveedorSedeQr } from "./proveedor-sede-qr";
 import type { ProveedorLineaFilter } from "@/lib/proveedores/board-filters";
+import { resolveVisitasBoardView } from "@/lib/proveedores/visitas-scope";
 import { ProveedoresVentasPanel } from "./proveedores-ventas-panel";
 import { ProveedoresProductividadPanel } from "./proveedores-productividad-panel";
 import { ProveedoresInasistenciaPanel } from "./proveedores-inasistencia-panel";
@@ -41,6 +42,14 @@ const formatWhen = (iso: string | null) => {
   return d.toLocaleString("es-CO", {
     dateStyle: "short",
     timeStyle: "short",
+  });
+};
+
+const formatDay = (isoDate: string) => {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (!y || !m || !d) return isoDate;
+  return new Date(y, m - 1, d).toLocaleDateString("es-CO", {
+    dateStyle: "medium",
   });
 };
 
@@ -170,10 +179,20 @@ export default function ProveedoresBoardPage() {
       );
       const data = (await response.json()) as {
         error?: string;
+        dateStart?: string;
+        dateEnd?: string;
+        sede?: string | null;
+        q?: string | null;
         rows?: ProveedorVisitaRow[];
         metrics?: ProveedorVisitasMetrics;
       };
       if (!response.ok) throw new Error(data.error || "No se pudo cargar.");
+      const sameRange =
+        data.dateStart === dateStart &&
+        data.dateEnd === dateEnd &&
+        (data.sede ?? "") === sede &&
+        (data.q ?? "") === q.trim();
+      if (!sameRange) return;
       setRows(data.rows ?? []);
       setMetrics(data.metrics ?? null);
     } catch (err) {
@@ -212,9 +231,23 @@ export default function ProveedoresBoardPage() {
     window.open(`/api/proveedores/visitas?${params.toString()}`, "_blank");
   };
 
+  const board = useMemo(
+    () =>
+      resolveVisitasBoardView({
+        rows,
+        metrics,
+        dateStart,
+        dateEnd,
+        sedeName: sede,
+      }),
+    [dateEnd, dateStart, metrics, rows, sede],
+  );
+  const viewRows = board.rows;
+  const viewMetrics = board.metrics;
+
   const maxHourVisitas = useMemo(
-    () => Math.max(1, ...(metrics?.byHour.map((h) => h.visitas) ?? [1])),
-    [metrics],
+    () => Math.max(1, ...(viewMetrics?.byHour.map((h) => h.visitas) ?? [1])),
+    [viewMetrics],
   );
 
   if (status !== "authenticated" || !user) {
@@ -448,6 +481,25 @@ export default function ProveedoresBoardPage() {
               CSV
             </button>
           </div>
+          {dateStart && dateEnd ? (
+            <p className="mt-3 text-xs text-slate-500">
+              El conteo usa solo entradas QR del{" "}
+              <span className="font-semibold text-slate-700">
+                {formatDay(dateStart)}
+                {dateStart !== dateEnd ? ` al ${formatDay(dateEnd)}` : ""}
+              </span>
+              {sede ? (
+                <>
+                  {" "}
+                  en{" "}
+                  <span className="font-semibold text-slate-700">{sede}</span>
+                </>
+              ) : (
+                " en todas las sedes"
+              )}
+              .
+            </p>
+          ) : null}
         </section>
 
         {error ? (
@@ -456,42 +508,42 @@ export default function ProveedoresBoardPage() {
           </div>
         ) : null}
 
-        {metrics ? (
+        {viewMetrics ? (
           <section className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <MetricCard
               label="Visitas"
-              value={String(metrics.totalVisitas)}
-              hint={`${metrics.cerradas} cerradas`}
+              value={String(viewMetrics.totalVisitas)}
+              hint={`${viewMetrics.cerradas} cerradas`}
             />
             <MetricCard
               label="Abiertas"
-              value={String(metrics.abiertas)}
+              value={String(viewMetrics.abiertas)}
               hint="Sin salida aún"
             />
             <MetricCard
               label="Proveedores"
-              value={String(metrics.proveedoresUnicos)}
+              value={String(viewMetrics.proveedoresUnicos)}
               hint="Únicos en el rango"
             />
             <MetricCard
               label="Visitantes"
-              value={String(metrics.visitantesUnicos)}
+              value={String(viewMetrics.visitantesUnicos)}
               hint="Cédulas únicas"
             />
             <MetricCard
               label="Duración prom."
-              value={formatMin(metrics.duracionPromedioMin)}
+              value={formatMin(viewMetrics.duracionPromedioMin)}
               hint="Solo cerradas"
             />
             <MetricCard
               label="Duración mediana"
-              value={formatMin(metrics.duracionMedianaMin)}
+              value={formatMin(viewMetrics.duracionMedianaMin)}
               hint="Solo cerradas"
             />
           </section>
         ) : null}
 
-        {metrics && metrics.totalVisitas > 0 ? (
+        {viewMetrics && viewMetrics.totalVisitas > 0 ? (
           <section className="mt-4 grid gap-4 lg:grid-cols-2">
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-4 py-3 text-sm font-bold text-slate-900">
@@ -508,7 +560,7 @@ export default function ProveedoresBoardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {metrics.bySede.map((row) => (
+                    {viewMetrics.bySede.map((row) => (
                       <tr key={row.sedeName} className="border-t border-slate-100">
                         <td className="px-3 py-2 font-medium text-slate-800">
                           {row.sedeName}
@@ -543,7 +595,7 @@ export default function ProveedoresBoardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {metrics.byProveedor.map((row) => (
+                    {viewMetrics.byProveedor.map((row) => (
                       <tr
                         key={row.proveedorNombre}
                         className="border-t border-slate-100"
@@ -578,7 +630,7 @@ export default function ProveedoresBoardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {metrics.byDay.map((row) => (
+                    {viewMetrics.byDay.map((row) => (
                       <tr key={row.date} className="border-t border-slate-100">
                         <td className="px-3 py-2 tabular-nums text-slate-800">
                           {row.date}
@@ -605,7 +657,7 @@ export default function ProveedoresBoardPage() {
               </p>
               <div className="mt-4 flex h-36 items-end gap-1">
                 {Array.from({ length: 24 }, (_, hour) => {
-                  const found = metrics.byHour.find((h) => h.hour === hour);
+                  const found = viewMetrics.byHour.find((h) => h.hour === hour);
                   const visitas = found?.visitas ?? 0;
                   const heightPct = (visitas / maxHourVisitas) * 100;
                   return (
@@ -653,7 +705,7 @@ export default function ProveedoresBoardPage() {
                 </tr>
               </thead>
               <tbody>
-                {loading && rows.length === 0 ? (
+                {loading && viewRows.length === 0 ? (
                   <tr>
                     <td
                       colSpan={7}
@@ -662,7 +714,7 @@ export default function ProveedoresBoardPage() {
                       Cargando visitas…
                     </td>
                   </tr>
-                ) : rows.length === 0 ? (
+                ) : viewRows.length === 0 ? (
                   <tr>
                     <td
                       colSpan={7}
@@ -672,7 +724,7 @@ export default function ProveedoresBoardPage() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((row) => (
+                  viewRows.map((row) => (
                     <tr key={row.id} className="border-t border-slate-100">
                       <td className="px-3 py-2.5 font-medium text-slate-800">
                         {row.sedeName}

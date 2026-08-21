@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import { proveedoresVisitasEntradaRangeSql } from "@/lib/proveedores/board-filters";
+import { buildProveedoresVisitasFilter } from "@/lib/proveedores/board-filters";
 import { normalizeEmpresaBd } from "@/lib/proveedores/line-family";
 import {
   listQrVisitasTablePairs,
@@ -51,20 +51,8 @@ const visitasFromSql = (sedeName?: string | null): string => {
   return `(\n${parts.join("\nUNION ALL\n")}\n) AS visitas_all`;
 };
 
-const buildVisitasFilter = (args: VisitasFilterArgs) => {
-  const params: unknown[] = [args.dateStart, args.dateEnd];
-  const clauses = [proveedoresVisitasEntradaRangeSql(1, 2)];
-  // Filtro por sede: la tabla física ya lo implica; no hace falta sede_name = $n.
-  const q = (args.q ?? "").trim().slice(0, 80);
-  if (q) {
-    params.push(`%${q.replace(/[%_]/g, "")}%`);
-    const idx = params.length;
-    clauses.push(
-      `(proveedor_nombre ILIKE $${idx} OR visitante_nombre ILIKE $${idx} OR visitante_cedula ILIKE $${idx} OR COALESCE(proveedor_codigo, '') ILIKE $${idx})`,
-    );
-  }
-  return { params, whereSql: clauses.join(" AND ") };
-};
+const buildVisitasFilter = (args: VisitasFilterArgs) =>
+  buildProveedoresVisitasFilter(args);
 
 export const resolveSedeByToken = async (
   client: PoolClient,

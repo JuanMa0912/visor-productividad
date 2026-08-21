@@ -4,6 +4,7 @@ import {
   compactToIsoDate,
   parseProveedorLineaFilter,
   proveedorLineaFamiliaSql,
+  buildProveedoresVisitasFilter,
   proveedoresVisitasEntradaRangeSql,
 } from "@/lib/proveedores/board-filters";
 
@@ -30,8 +31,29 @@ describe("proveedores board-filters", () => {
   it("acota entrada_at al día calendario de Bogotá, no a UTC del servidor", () => {
     const sql = proveedoresVisitasEntradaRangeSql(1, 2);
     assert.match(sql, /America\/Bogota/);
-    assert.match(sql, /\$1::date/);
-    assert.match(sql, /\$2::date \+ 1/);
+    assert.match(sql, /\(entrada_at AT TIME ZONE/);
+    assert.match(sql, /::date >= \$1::date/);
+    assert.match(sql, /::date <= \$2::date/);
     assert.doesNotMatch(sql, /T00:00:00/);
+  });
+
+  it("con sede exige sede_name además del día de entrada", () => {
+    const filter = buildProveedoresVisitasFilter({
+      dateStart: "2026-08-20",
+      dateEnd: "2026-08-20",
+      sedeName: "Floresta",
+    });
+    assert.deepEqual(filter.params, ["2026-08-20", "2026-08-20", "Floresta"]);
+    assert.match(filter.whereSql, /sede_name = \$3/);
+    assert.match(filter.whereSql, /America\/Bogota/);
+  });
+
+  it("sin sede no filtra sede_name: el FROM ya elige tabla o UNION", () => {
+    const filter = buildProveedoresVisitasFilter({
+      dateStart: "2026-08-20",
+      dateEnd: "2026-08-20",
+    });
+    assert.deepEqual(filter.params, ["2026-08-20", "2026-08-20"]);
+    assert.doesNotMatch(filter.whereSql, /sede_name/);
   });
 });

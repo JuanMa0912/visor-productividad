@@ -39,15 +39,44 @@ export const compactToIsoDate = (compact: string): string => {
 /** Día calendario de visitas QR (mismo huso que el agrupado por día). */
 export const PROVEEDORES_VISITAS_TZ = "America/Bogota";
 
+export type ProveedoresVisitasFilterArgs = {
+  dateStart: string;
+  dateEnd: string;
+  sedeName?: string | null;
+  q?: string | null;
+};
+
 /**
- * `entrada_at` en el rango [from, to] inclusive, en calendario Colombia.
- * Evita interpretar `YYYY-MM-DDT00:00:00` en UTC del servidor.
+ * Día de entrada en calendario Colombia, igual que el GROUP BY "por día".
+ * No usa `T00:00:00` (eso se interpreta en el TimeZone de la sesión).
  */
 export const proveedoresVisitasEntradaRangeSql = (
   fromParam: number,
   toParam: number,
 ) =>
-  `entrada_at >= ($${fromParam}::date)::timestamp AT TIME ZONE '${PROVEEDORES_VISITAS_TZ}' AND entrada_at < (($${toParam}::date + 1)::timestamp AT TIME ZONE '${PROVEEDORES_VISITAS_TZ}')`;
+  `(entrada_at AT TIME ZONE '${PROVEEDORES_VISITAS_TZ}')::date >= $${fromParam}::date AND (entrada_at AT TIME ZONE '${PROVEEDORES_VISITAS_TZ}')::date <= $${toParam}::date`;
+
+/** WHERE + params de asistencia: día(s) Bogotá, sede explícita y búsqueda. */
+export const buildProveedoresVisitasFilter = (
+  args: ProveedoresVisitasFilterArgs,
+) => {
+  const params: unknown[] = [args.dateStart, args.dateEnd];
+  const clauses = [proveedoresVisitasEntradaRangeSql(1, 2)];
+  const sedeName = (args.sedeName ?? "").trim();
+  if (sedeName) {
+    params.push(sedeName);
+    clauses.push(`sede_name = $${params.length}`);
+  }
+  const q = (args.q ?? "").trim().slice(0, 80);
+  if (q) {
+    params.push(`%${q.replace(/[%_]/g, "")}%`);
+    const idx = params.length;
+    clauses.push(
+      `(proveedor_nombre ILIKE $${idx} OR visitante_nombre ILIKE $${idx} OR visitante_cedula ILIKE $${idx} OR COALESCE(proveedor_codigo, '') ILIKE $${idx})`,
+    );
+  }
+  return { params, whereSql: clauses.join(" AND ") };
+};
 
 /** Predicado SQL: familia N1 = filtro (TRUE si "todas"). */
 export const proveedorLineaFamiliaSql = (
