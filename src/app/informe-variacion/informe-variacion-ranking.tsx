@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   aggregateBySede,
   type prepareInformeData,
@@ -16,6 +16,7 @@ import {
   INFORME_RANKING_LIMITS,
   buildInformeEmpresaSummary,
   buildInformeRankingRows,
+  clampInformeRankingLimit,
   type InformeRankingDimension,
   type InformeRankingSortCol,
   type InformeRankingTableSort,
@@ -117,6 +118,10 @@ export function InformeRankingTable({
 }: RankingProps) {
   void _mode;
   void _onModeChange;
+  const [topDraft, setTopDraft] = useState(String(limit));
+  useEffect(() => {
+    setTopDraft(String(limit));
+  }, [limit]);
   const rows = useMemo(
     () =>
       buildInformeRankingRows({
@@ -135,6 +140,12 @@ export function InformeRankingTable({
       col,
       dir: sort.col === col ? sort.dir * -1 : 1,
     });
+  };
+
+  const commitTopDraft = () => {
+    const next = clampInformeRankingLimit(Number.parseInt(topDraft, 10));
+    onLimitChange(next);
+    setTopDraft(String(next));
   };
 
   return (
@@ -164,6 +175,26 @@ export function InformeRankingTable({
           }))}
           onChange={(value) => onLimitChange(Number(value))}
         />
+        <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+          Top
+          <input
+            type="number"
+            min={5}
+            max={200}
+            inputMode="numeric"
+            value={topDraft}
+            onChange={(event) => setTopDraft(event.target.value)}
+            onBlur={commitTopDraft}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitTopDraft();
+              }
+            }}
+            aria-label="Cantidad del ranking"
+            className="h-7 w-16 rounded-lg border border-slate-200 bg-white px-2 text-right text-xs font-semibold text-slate-800 tabular-nums"
+          />
+        </label>
       </div>
       <p className="text-xs text-slate-500">
         Top {limit} por{" "}
@@ -193,7 +224,7 @@ export function InformeRankingTable({
                 dir={sort.dir}
                 onClick={() => toggleRankingSort("cur")}
               >
-                Actual
+                Periodo actual
               </SortableTh>
               <SortableTh
                 align="right"
@@ -209,7 +240,7 @@ export function InformeRankingTable({
                 dir={sort.dir}
                 onClick={() => toggleRankingSort("prev")}
               >
-                Anterior
+                Periodo anterior
               </SortableTh>
               {payload.sedes.map((sede, index) => (
                 <SortableTh
@@ -322,7 +353,7 @@ export function InformeEmpresaSummaryCards({
             {formatInformeValue(row.total[0], metric)}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-slate-500">vs ant.</span>
+            <span className="text-slate-500">vs periodo anterior</span>
             <VariationChip current={row.total[0]} previous={row.total[1]} />
             <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
               {(row.share * 100).toFixed(1)}%

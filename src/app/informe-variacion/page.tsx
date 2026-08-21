@@ -916,7 +916,8 @@ export default function InformeVariacionPage() {
             <>
           <p className="mb-3 text-xs text-slate-500">
             Elige dos intervalos de fechas. Al comparar, las cifras salen de
-            una: meses cerrados ya van preagregados.
+            una: meses cerrados ya van preagregados. En esta pestaña también
+            está la matriz comparativa entre sedes.
           </p>
           <div className="flex flex-wrap items-end gap-4">
             <fieldset className="flex flex-wrap items-end gap-2">

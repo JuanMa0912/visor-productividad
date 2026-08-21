@@ -4,6 +4,7 @@ import { prepareInformeData } from "@/lib/informe-variacion/aggregate";
 import {
   buildInformeEmpresaSummary,
   buildInformeRankingRows,
+  clampInformeRankingLimit,
 } from "@/lib/informe-variacion/ranking";
 import type { InformeVariacionPayload } from "@/lib/informe-variacion/types";
 
@@ -126,6 +127,15 @@ describe("buildInformeRankingRows", () => {
     });
     assert.equal(bySedeCol[0]?.label, "Costilla");
     assert.equal(bySedeCol[0]?.perSede[0]?.[0], 90);
+  });
+});
+
+describe("clampInformeRankingLimit", () => {
+  it("permite un top escrito y lo acota entre 5 y 200", () => {
+    assert.equal(clampInformeRankingLimit(15), 15);
+    assert.equal(clampInformeRankingLimit(1), 5);
+    assert.equal(clampInformeRankingLimit(500), 200);
+    assert.equal(clampInformeRankingLimit(Number.NaN), 20);
   });
 });
 

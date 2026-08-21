@@ -184,8 +184,8 @@ function InformeVariacionBoardReady({
    */
   const periodoActual = payload.periods.current;
 
-  const curLabel = "Actual";
-  const momLabel = compareMode === "yoy" ? "Año ant." : "Mes ant.";
+  const curLabel = "Periodo actual";
+  const momLabel = "Periodo anterior";
   const yoyLabel = momLabel;
 
   const matrixSortKeys = (
@@ -374,7 +374,7 @@ function InformeVariacionBoardReady({
             loading={dataPending}
           />
           <KpiCard
-            title={`${momLabel} (base anterior)`}
+            title={momLabel}
             value={formatInformeValue(kpiTotals[1], kpiMetric)}
             tag={filteredTag}
             loading={dataPending}
@@ -391,7 +391,7 @@ function InformeVariacionBoardReady({
             loading={dataPending}
             footer={
               <span className="text-slate-500">
-                de las sedes con base {momLabel.toLowerCase()}
+                de las sedes con base periodo anterior
               </span>
             }
           />
@@ -505,7 +505,7 @@ function InformeVariacionBoardReady({
       </Section>
       ) : null}
 
-      {boardTab === "cortes" ? (
+      {boardTab === "cortes" || boardTab === "comparativo" ? (
       <Section
         title="Matriz comparativa entre sedes"
         actions={

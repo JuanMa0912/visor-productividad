@@ -99,7 +99,7 @@ export const writeInformeSedeSummaryWorkbook = async ({
     views: [{ state: "frozen", ySplit: 4 }],
   });
 
-  const valueHeader = metric === "u" ? "Actual (unidades)" : "Actual ($ miles)";
+  const valueHeader = metric === "u" ? "Periodo actual (unidades)" : "Periodo actual ($ miles)";
   const valueFmt = metric === "u" ? UNITS_FMT : MILES_FMT;
 
 const MARG_FMT = '0.0"%";"—"';
