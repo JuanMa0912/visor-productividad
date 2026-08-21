@@ -77,7 +77,7 @@ export const ROTACION_TOUR_STEPS: DriveStep[] = [
     popover: {
       title: "Filtros rápidos",
       description:
-        "Cero rotación, topes de venta e inventario, y chips S.inventario al filtrar cero o restock. En restock, arriba ves sin verificar / seguimiento / surtido. Si el ítem ya está surtido, en la fila puedes tomar la foto. Auditar abre la evidencia y la hora en que se marcó surtido.",
+        "Cero rotación, topes de venta e inventario, y chips S.inventario al filtrar cero o restock. En restock, arriba ves sin verificar / seguimiento / surtido. Si el ítem ya está surtido, en la fila puedes tomar la foto. La columna Auditar se activa cuando hay evidencia.",
       side: "top",
       align: "start",
     },

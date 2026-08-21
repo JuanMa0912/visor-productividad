@@ -89,9 +89,11 @@ import {
   isAbcdLetterFilterActive,
   ROTACION_TABLE_COL_WIDTHS,
   ROTACION_ZERO_TABLE_COL_WIDTHS,
+  ROTACION_RESTOCK_TABLE_COL_WIDTHS,
   ROTACION_FLOATING_HEADER_TOP_PX,
   ROTACION_FLOATING_HEADER_COLUMNS,
   ROTACION_FLOATING_HEADER_COLUMNS_ZERO,
+  ROTACION_FLOATING_HEADER_COLUMNS_RESTOCK,
   NO_SALES_DI_VALUE,
   mergeRotationLineaN1NombreMaps,
   mergeRotationLineaN2NombreMaps,
@@ -173,7 +175,10 @@ import "@/lib/ui/product-tour/product-tour.css";
 import { auditChangedAtDateKeyBogota } from "./audit-utils";
 import { logExportDownload } from "@/lib/client/log-export-download";
 import { SurtidoAuditModal } from "./surtido-audit-modal";
-import { RestockSurtidoFotoControl } from "./restock-surtido-foto-control";
+import {
+  RestockSurtidoAuditButton,
+  RestockSurtidoFotoControl,
+} from "./restock-surtido-foto-control";
 import { RotacionGraficoBoard } from "./rotacion-grafico-board";
 import {
   buildRotacionRowsCacheKey,
@@ -5559,9 +5564,11 @@ export function RotacionPageInner() {
                               className="rotacion-sticky-table w-full min-w-7xl table-fixed border-collapse text-sm [&_th]:text-center! [&_td]:text-center!"
                             >
                               <colgroup>
-                                {(isSurtidoTrackingTableView
-                                  ? ROTACION_ZERO_TABLE_COL_WIDTHS
-                                  : ROTACION_TABLE_COL_WIDTHS
+                                {(isRestockCategoryView
+                                  ? ROTACION_RESTOCK_TABLE_COL_WIDTHS
+                                  : isSurtidoTrackingTableView
+                                    ? ROTACION_ZERO_TABLE_COL_WIDTHS
+                                    : ROTACION_TABLE_COL_WIDTHS
                                 ).map((w, i) => (
                                   <col key={i} style={{ width: w }} />
                                 ))}
@@ -5600,6 +5607,11 @@ export function RotacionPageInner() {
                                           onSort={handleTableSort}
                                         />
                                       </TableHead>
+                                      {isRestockCategoryView ? (
+                                        <TableHead className="whitespace-nowrap border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom text-[11px] font-semibold uppercase tracking-wide text-slate-600 backdrop-blur-sm">
+                                          Auditar
+                                        </TableHead>
+                                      ) : null}
                                       <TableHead className="border-b border-slate-200 bg-slate-50/95 px-2 py-2 align-bottom backdrop-blur-sm">
                                         <SortableRotationHeader
                                           field="descripcion"
@@ -5882,6 +5894,34 @@ export function RotacionPageInner() {
                                           : displayCategory === "S"
                                               ? "border-cyan-300 bg-cyan-200 text-cyan-900"
                                               : "border-rose-300 bg-rose-200 text-rose-900";
+                                  const restockEstadoKey =
+                                    makeCeroRotacionEstadoKey(
+                                      row.empresa,
+                                      row.sedeId,
+                                      row.item,
+                                    );
+                                  const restockHasPhoto = Boolean(
+                                    restockFotoMetaByKey[restockEstadoKey],
+                                  );
+                                  const handleRestockHasPhotoChange = (
+                                    hasPhoto: boolean,
+                                  ) => {
+                                    setRestockFotoMetaByKey((prev) => {
+                                      if (hasPhoto) {
+                                        return {
+                                          ...prev,
+                                          [restockEstadoKey]:
+                                            prev[restockEstadoKey] ?? {
+                                              mime: "image/jpeg",
+                                              updatedAt: new Date().toISOString(),
+                                            },
+                                        };
+                                      }
+                                      const next = { ...prev };
+                                      delete next[restockEstadoKey];
+                                      return next;
+                                    });
+                                  };
                                   return (
                                     <TableRow
                                       key={`${group.sedeId}-${row.item}-${rowIndex}`}
@@ -5954,53 +5994,34 @@ export function RotacionPageInner() {
                                                 row={row}
                                                 estado={
                                                   restockEstadoByKey[
-                                                    makeCeroRotacionEstadoKey(
-                                                      row.empresa,
-                                                      row.sedeId,
-                                                      row.item,
-                                                    )
+                                                    restockEstadoKey
                                                   ] ?? DEFAULT_CERO_ROTACION_ESTADO
                                                 }
                                                 dateStart={dateRange.start}
                                                 dateEnd={dateRange.end}
-                                                hasPhoto={Boolean(
-                                                  restockFotoMetaByKey[
-                                                    makeCeroRotacionEstadoKey(
-                                                      row.empresa,
-                                                      row.sedeId,
-                                                      row.item,
-                                                    )
-                                                  ],
-                                                )}
-                                                onHasPhotoChange={(hasPhoto) => {
-                                                  const key =
-                                                    makeCeroRotacionEstadoKey(
-                                                      row.empresa,
-                                                      row.sedeId,
-                                                      row.item,
-                                                    );
-                                                  setRestockFotoMetaByKey((prev) => {
-                                                    if (hasPhoto) {
-                                                      return {
-                                                        ...prev,
-                                                        [key]:
-                                                          prev[key] ?? {
-                                                            mime: "image/jpeg",
-                                                            updatedAt:
-                                                              new Date().toISOString(),
-                                                          },
-                                                      };
-                                                    }
-                                                    const next = { ...prev };
-                                                    delete next[key];
-                                                    return next;
-                                                  });
-                                                }}
+                                                hasPhoto={restockHasPhoto}
+                                                onHasPhotoChange={
+                                                  handleRestockHasPhotoChange
+                                                }
                                                 onError={setError}
                                               />
                                             ) : null}
                                             </div>
                                           </TableCell>
+                                          {isRestockCategoryView ? (
+                                            <TableCell className="whitespace-nowrap px-1 py-2 text-center align-top">
+                                              <RestockSurtidoAuditButton
+                                                row={row}
+                                                dateStart={dateRange.start}
+                                                dateEnd={dateRange.end}
+                                                hasPhoto={restockHasPhoto}
+                                                onHasPhotoChange={
+                                                  handleRestockHasPhotoChange
+                                                }
+                                                onError={setError}
+                                              />
+                                            </TableCell>
+                                          ) : null}
                                           <TableCell className="min-w-0 px-2 py-2 align-top whitespace-normal">
                                             <div className="wrap-break-word">
                                               <p className="text-[13px] font-medium leading-snug text-slate-900">
@@ -6237,12 +6258,16 @@ export function RotacionPageInner() {
           floatingCategoryFilter === "N";
         const floatingIsSurtidoTrackingTableView =
           floatingIsCeroContext || floatingIsRestockCategory;
-        const floatingWidths = floatingIsSurtidoTrackingTableView
-          ? ROTACION_ZERO_TABLE_COL_WIDTHS
-          : ROTACION_TABLE_COL_WIDTHS;
-        const floatingColumns = floatingIsSurtidoTrackingTableView
-          ? ROTACION_FLOATING_HEADER_COLUMNS_ZERO
-          : ROTACION_FLOATING_HEADER_COLUMNS;
+        const floatingWidths = floatingIsRestockCategory
+          ? ROTACION_RESTOCK_TABLE_COL_WIDTHS
+          : floatingIsSurtidoTrackingTableView
+            ? ROTACION_ZERO_TABLE_COL_WIDTHS
+            : ROTACION_TABLE_COL_WIDTHS;
+        const floatingColumns = floatingIsRestockCategory
+          ? ROTACION_FLOATING_HEADER_COLUMNS_RESTOCK
+          : floatingIsSurtidoTrackingTableView
+            ? ROTACION_FLOATING_HEADER_COLUMNS_ZERO
+            : ROTACION_FLOATING_HEADER_COLUMNS;
 
         return floatingHeaderState ? (
           <div

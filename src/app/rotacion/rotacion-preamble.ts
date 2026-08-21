@@ -286,6 +286,22 @@ const ROTACION_ZERO_TABLE_COL_WIDTHS = [
   "11%",
   "8%",
 ] as const;
+/** Vista restock: columna Auditar entre S.inventario y Descripcion. */
+const ROTACION_RESTOCK_TABLE_COL_WIDTHS = [
+  "4%",
+  "7%",
+  "4%",
+  "9%",
+  "8%",
+  "14%",
+  "8%",
+  "9%",
+  "9%",
+  "6%",
+  "6%",
+  "10%",
+  "8%",
+] as const;
 const ROTACION_FLOATING_HEADER_TOP_PX = 57;
 const ROTACION_FLOATING_HEADER_COLUMNS = [
   { label: "#", align: "right" as const },
@@ -341,6 +357,49 @@ const ROTACION_FLOATING_HEADER_COLUMNS_ZERO = [
     align: "left" as const,
     field: "ceroRotacionEstado" as const,
   },
+  {
+    label: "Descripcion",
+    align: "left" as const,
+    field: "descripcion" as const,
+  },
+  {
+    label: "Venta período",
+    align: "right" as const,
+    field: "totalSales" as const,
+  },
+  { label: "Inv.", align: "right" as const, field: "inventoryUnits" as const },
+  {
+    label: "V. inv.",
+    align: "right" as const,
+    field: "inventoryValue" as const,
+  },
+  { label: "DI", align: "right" as const, field: "lastMovementDate" as const },
+  { label: "DUV", align: "right" as const, field: "duvDays" as const },
+  {
+    label: "Ult. venta",
+    align: "right" as const,
+    field: "lastPurchaseDate" as const,
+  },
+  {
+    label: "Ult. ingr.",
+    align: "right" as const,
+    field: "lastMovementDate" as const,
+  },
+] as const;
+const ROTACION_FLOATING_HEADER_COLUMNS_RESTOCK = [
+  { label: "#", align: "right" as const },
+  { label: "Item", align: "left" as const, field: "item" as const },
+  {
+    label: "Cat.",
+    align: "center" as const,
+    field: "categoria" as const,
+  },
+  {
+    label: "S.inventario",
+    align: "left" as const,
+    field: "ceroRotacionEstado" as const,
+  },
+  { label: "Auditar", align: "center" as const },
   {
     label: "Descripcion",
     align: "left" as const,
@@ -1799,4 +1858,4 @@ const readRotationApiForbiddenMessage = async (
 };
 
 export type { DateRange, RotationRow, RotationCategoriaFilterOption, RotationApiResponse, RotationCatalogSnapshot, LineaN1Option, LineaN2Option, LineaN1FamilyKey, AbcdConfig, AbcdCategory, GroupAbcdFilter, RotationSortField, RotationSortDirection, PageSize, AbcdSummaryRow, GroupRowsQuickFilter, GroupZeroEstadoSetFilter };
-export { getCookieValue, ALL_LINEA_N1_FAMILY_KEYS, LINEA_N1_FAMILY_LABELS, matchesLineaN1Family, ABCD_FILTER_LETTERS_ORDER, normalizeAbcdLetterSelection, toggleAbcdLetterFilter, isAbcdLetterFilterActive, formatAbcdCategoryFilterLabel, DAY_IN_MS, ROTACION_TABLE_COL_WIDTHS, ROTACION_ZERO_TABLE_COL_WIDTHS, ROTACION_FLOATING_HEADER_TOP_PX, ROTACION_FLOATING_HEADER_COLUMNS, ROTACION_FLOATING_HEADER_COLUMNS_ZERO, NO_SALES_DI_VALUE, PERECEDEROS_LINEAS_N1, mergeRotationLineaN1NombreMaps, mergeRotationLineaN2NombreMaps, bestLineaDisplayFromRow, compareLineaN1FilterCodes, compareLineaN2FilterCodes, normalizeLineaN1CodeForFilter, normalizeLineaN2CodeForFilter, buildRotationItemLineaN2Key, resolveRowLineaN2FilterCode, LINEA_N1_SHORT_NAMES, DEFAULT_ABCD_CONFIG, PAGE_SIZE_OPTIONS, dateLabelOptions, parseDateKey, toDateKey, clampDateKeyToBounds, getRollingMonthBackRange, buildRotacionRowsKey, sanitizeNumericInput, normalizeDateRange, addMonthsToDateKey, ROTACION_MAX_RANGE_MONTHS, ROTACION_MAX_RANGE_ERROR, enforceMaxDateRangeMonths, isRangeWithinMaxMonths, countInclusiveDays, formatRangeLabel, formatPrice, formatPriceWithoutSixZeros, formatPercent, rotationMarginPct, buildExportFileStamp, dataUrlToBlob, WHATSAPP_TABLE_EXCLUDE, getRotacionWhatsappPixelRatio, openWhatsAppDesktopPreferred, WHATSAPP_JPEG_QUALITY, rotacionWhatsappExportFilter, prepareRotacionWhatsappExportDom, STATUS_SORT_ORDER, compareRotationText, foldForProductSearch, rowMatchesProductSearch, formatRotationOneDecimal, calculateDuvDays, calculateDiSinceLastIngresoDays, clampPercent, safeNumber, resolveRotationDemandaUnits, normalizeRotationRows, buildCategoriaQueryKeys, appendCategoriaParams, buildLineasN1QueryValues, buildLineasN2QueryValues, buildLineasN2ClientFilterValues, rowMatchesLineaN2Filter, filterRotationRowsByLineaAndCategoria, readCatalogCache, writeCatalogCache, DEFAULT_CATEGORIA_DESTINO, buildDefaultCategoriaKeys, normalizeAbcdConfig, buildAbcdCategoryByItem, countAbcdItemsByCategory, buildAbcdSummaryRows, compareNullableIsoDateKeys, getDefaultSortDirection, sortRotationRows, buildRowsBySede, buildConsolidatedRowsBySelection, isCeroRotacionRow, isNuevoItemRow, isCeroRotacionExcludingNuevo, applyRowsQuickFilter, COMPANY_LABELS, formatCompanyLabel, formatSedeLabel, displayRotationSedeName, mapRotationSedeOptions, ROTACION_LAST_SEDE_STORAGE_KEY, ROTACION_FRONT_CATALOG_CACHE_TTL_MS, readRotationApiForbiddenMessage, DEFAULT_GROUP_ZERO_ESTADO_SET_FILTER, normalizeGroupZeroEstadoSetFilter };
+export { getCookieValue, ALL_LINEA_N1_FAMILY_KEYS, LINEA_N1_FAMILY_LABELS, matchesLineaN1Family, ABCD_FILTER_LETTERS_ORDER, normalizeAbcdLetterSelection, toggleAbcdLetterFilter, isAbcdLetterFilterActive, formatAbcdCategoryFilterLabel, DAY_IN_MS, ROTACION_TABLE_COL_WIDTHS, ROTACION_ZERO_TABLE_COL_WIDTHS, ROTACION_RESTOCK_TABLE_COL_WIDTHS, ROTACION_FLOATING_HEADER_TOP_PX, ROTACION_FLOATING_HEADER_COLUMNS, ROTACION_FLOATING_HEADER_COLUMNS_ZERO, ROTACION_FLOATING_HEADER_COLUMNS_RESTOCK, NO_SALES_DI_VALUE, PERECEDEROS_LINEAS_N1, mergeRotationLineaN1NombreMaps, mergeRotationLineaN2NombreMaps, bestLineaDisplayFromRow, compareLineaN1FilterCodes, compareLineaN2FilterCodes, normalizeLineaN1CodeForFilter, normalizeLineaN2CodeForFilter, buildRotationItemLineaN2Key, resolveRowLineaN2FilterCode, LINEA_N1_SHORT_NAMES, DEFAULT_ABCD_CONFIG, PAGE_SIZE_OPTIONS, dateLabelOptions, parseDateKey, toDateKey, clampDateKeyToBounds, getRollingMonthBackRange, buildRotacionRowsKey, sanitizeNumericInput, normalizeDateRange, addMonthsToDateKey, ROTACION_MAX_RANGE_MONTHS, ROTACION_MAX_RANGE_ERROR, enforceMaxDateRangeMonths, isRangeWithinMaxMonths, countInclusiveDays, formatRangeLabel, formatPrice, formatPriceWithoutSixZeros, formatPercent, rotationMarginPct, buildExportFileStamp, dataUrlToBlob, WHATSAPP_TABLE_EXCLUDE, getRotacionWhatsappPixelRatio, openWhatsAppDesktopPreferred, WHATSAPP_JPEG_QUALITY, rotacionWhatsappExportFilter, prepareRotacionWhatsappExportDom, STATUS_SORT_ORDER, compareRotationText, foldForProductSearch, rowMatchesProductSearch, formatRotationOneDecimal, calculateDuvDays, calculateDiSinceLastIngresoDays, clampPercent, safeNumber, resolveRotationDemandaUnits, normalizeRotationRows, buildCategoriaQueryKeys, appendCategoriaParams, buildLineasN1QueryValues, buildLineasN2QueryValues, buildLineasN2ClientFilterValues, rowMatchesLineaN2Filter, filterRotationRowsByLineaAndCategoria, readCatalogCache, writeCatalogCache, DEFAULT_CATEGORIA_DESTINO, buildDefaultCategoriaKeys, normalizeAbcdConfig, buildAbcdCategoryByItem, countAbcdItemsByCategory, buildAbcdSummaryRows, compareNullableIsoDateKeys, getDefaultSortDirection, sortRotationRows, buildRowsBySede, buildConsolidatedRowsBySelection, isCeroRotacionRow, isNuevoItemRow, isCeroRotacionExcludingNuevo, applyRowsQuickFilter, COMPANY_LABELS, formatCompanyLabel, formatSedeLabel, displayRotationSedeName, mapRotationSedeOptions, ROTACION_LAST_SEDE_STORAGE_KEY, ROTACION_FRONT_CATALOG_CACHE_TTL_MS, readRotationApiForbiddenMessage, DEFAULT_GROUP_ZERO_ESTADO_SET_FILTER, normalizeGroupZeroEstadoSetFilter };

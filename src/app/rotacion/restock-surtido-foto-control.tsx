@@ -58,8 +58,17 @@ type RestockSurtidoFotoControlProps = {
   onError: (message: string) => void;
 };
 
+type RestockSurtidoAuditButtonProps = {
+  row: RotationRow;
+  dateStart: string;
+  dateEnd: string;
+  hasPhoto: boolean;
+  onHasPhotoChange: (hasPhoto: boolean) => void;
+  onError: (message: string) => void;
+};
+
 type RestockAuditPreview = {
-  src: string | null;
+  src: string;
   fotoUpdatedAt: string | null;
   surtidoAt: string | null;
   surtidoUsername: string | null;
@@ -76,8 +85,6 @@ export function RestockSurtidoFotoControl({
 }: RestockSurtidoFotoControlProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<RestockAuditPreview | null>(null);
-
   const canCapture = estado === "surtido";
 
   const uploadFoto = async (file: File) => {
@@ -117,7 +124,54 @@ export function RestockSurtidoFotoControl({
     }
   };
 
+  if (!canCapture) return null;
+
+  return (
+    <div className="mt-1">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="sr-only"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) void uploadFoto(file);
+        }}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={busy}
+        className="h-7 gap-1 rounded-md px-2 text-[10px] font-semibold uppercase tracking-wide"
+        onClick={() => fileRef.current?.click()}
+      >
+        {busy ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <Camera className="h-3 w-3" />
+        )}
+        {hasPhoto ? "Cambiar foto" : "Tomar foto"}
+      </Button>
+    </div>
+  );
+}
+
+export function RestockSurtidoAuditButton({
+  row,
+  dateStart,
+  dateEnd,
+  hasPhoto,
+  onHasPhotoChange,
+  onError,
+}: RestockSurtidoAuditButtonProps) {
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<RestockAuditPreview | null>(null);
+
   const openAudit = async () => {
+    if (!hasPhoto) return;
     setBusy(true);
     try {
       const params = new URLSearchParams({
@@ -135,24 +189,21 @@ export function RestockSurtidoFotoControl({
         surtido?: { at: string; username: string | null } | null;
         error?: string;
       };
-      if (!res.ok) throw new Error(payload.error ?? "No se pudo cargar la auditoria.");
-      if (payload.foto) {
-        onHasPhotoChange(true);
-        setPreview({
-          src: restockSurtidoFotoDataUrl(
-            payload.foto.fotoBase64,
-            payload.foto.mime,
-          ),
-          fotoUpdatedAt: payload.foto.updatedAt ?? null,
-          surtidoAt: payload.surtido?.at ?? null,
-          surtidoUsername: payload.surtido?.username ?? null,
-        });
+      if (!res.ok) {
+        throw new Error(payload.error ?? "No se pudo cargar la auditoria.");
+      }
+      if (!payload.foto) {
+        onHasPhotoChange(false);
+        onError("Este ítem aún no tiene foto de evidencia.");
         return;
       }
-      onHasPhotoChange(false);
+      onHasPhotoChange(true);
       setPreview({
-        src: null,
-        fotoUpdatedAt: null,
+        src: restockSurtidoFotoDataUrl(
+          payload.foto.fotoBase64,
+          payload.foto.mime,
+        ),
+        fotoUpdatedAt: payload.foto.updatedAt ?? null,
         surtidoAt: payload.surtido?.at ?? null,
         surtidoUsername: payload.surtido?.username ?? null,
       });
@@ -167,45 +218,21 @@ export function RestockSurtidoFotoControl({
   const fotoWhen = formatRestockSurtidoWhen(preview?.fotoUpdatedAt);
 
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-1">
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="sr-only"
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (file) void uploadFoto(file);
-        }}
-      />
-      {canCapture ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={busy}
-          className="h-7 gap-1 rounded-md px-2 text-[10px] font-semibold uppercase tracking-wide"
-          onClick={() => fileRef.current?.click()}
-        >
-          {busy ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <Camera className="h-3 w-3" />
-          )}
-          {hasPhoto ? "Cambiar foto" : "Tomar foto"}
-        </Button>
-      ) : null}
+    <>
       <Button
         type="button"
-        variant={hasPhoto ? "outline" : "ghost"}
+        variant="outline"
         size="sm"
-        disabled={busy}
-        className={`h-7 gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide ${
+        disabled={!hasPhoto || busy}
+        title={
+          hasPhoto
+            ? "Ver foto y cuándo se marcó surtido"
+            : "Sin foto de evidencia"
+        }
+        className={`h-7 gap-1 rounded-md px-2 text-[10px] font-semibold uppercase tracking-wide ${
           hasPhoto
             ? "border-teal-200 bg-teal-50/80 text-teal-900 hover:bg-teal-100"
-            : "text-slate-700"
+            : "border-slate-200 bg-slate-100 text-slate-400"
         }`}
         onClick={() => void openAudit()}
       >
@@ -253,18 +280,12 @@ export function RestockSurtidoFotoControl({
               </button>
             </div>
             <div className="flex min-h-[180px] items-center justify-center overflow-auto bg-slate-50 p-4">
-              {preview.src ? (
-                // eslint-disable-next-line @next/next/no-img-element -- base64 en memoria, no pasa por el optimizador
-                <img
-                  src={preview.src}
-                  alt={`Evidencia de surtido del ítem ${row.item}`}
-                  className="max-h-[62vh] w-full rounded-lg object-contain"
-                />
-              ) : (
-                <p className="px-4 text-center text-sm text-slate-500">
-                  Este ítem aún no tiene foto de evidencia.
-                </p>
-              )}
+              {/* eslint-disable-next-line @next/next/no-img-element -- base64 en memoria, no pasa por el optimizador */}
+              <img
+                src={preview.src}
+                alt={`Evidencia de surtido del ítem ${row.item}`}
+                className="max-h-[62vh] w-full rounded-lg object-contain"
+              />
             </div>
             <div className="space-y-1 border-t border-slate-100 px-4 py-3 text-xs text-slate-600">
               <p>
@@ -280,7 +301,7 @@ export function RestockSurtidoFotoControl({
                   <span className="text-slate-500">aún no se ha marcado</span>
                 )}
               </p>
-              {preview.src && fotoWhen ? (
+              {fotoWhen ? (
                 <p>
                   Foto subida:{" "}
                   <strong className="font-semibold text-slate-900">
@@ -292,6 +313,6 @@ export function RestockSurtidoFotoControl({
           </div>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
