@@ -240,6 +240,67 @@ $SYNC --desde 2026-08-01 --hasta 2026-08-09 --replace --no-refresh --verify \
 **Ojo:** `ventas_asadero` solo opera en **mercamio y mtodo**. Ver bogota en 0 ahi es
 normal, no un hueco.
 
+### El BUCLE de agosto de 2026 (resuelto el 2026-08-21) — leer antes de tocar `Restart=`
+
+`ventas-pipeline-monthly` se relanzaba **cada ~35 minutos, todo el dia**, durante seis
+dias. Corridas por dia, contadas en `/opt/ventas_pipeline/logs/`:
+
+| 10-ago | 14-ago | 15-ago | 16-ago | 17-ago | 18-ago | 19-ago | 20-ago |
+|---|---|---|---|---|---|---|---|
+| 1 | 2 | 13 | 48 | 49 | 55 | **75** | 43 |
+
+**Era la causa de fondo de casi todo lo que fallaba por las mananas:** saturaba el POS
+(217), y con el 217 saturado el ETL de ordenes de compra moria con
+`ERROR: connection already closed`, el `rolling` tardaba 12 horas en vez de 2, y los ETL
+de las 07:00 iban tan lentos que el sync de las 07:35 los alcanzaba.
+
+La cadena causal completa, eslabon por eslabon:
+
+1. Los 6 ETL salen con **exit 3**, que en este repo es un **AVISO deliberado** (empresa
+   faltante o flaca, ver 3.c). No es un error: procesaban 1.578.825 registros bien.
+2. `etl_runner.py:185` hace `if returncode == 0 -> SUCCESS else -> FAILED`. El 3 cae en
+   el `else` y los 6 quedan marcados como **failed**.
+3. `pipeline_orchestrator.py:273` hace `sys.exit(1 if failed > 0 else 0)` -> sale con **1**.
+4. La unit tenia `RestartPreventExitStatus=3`, puesto justo para evitar esto — pero
+   protege del 3 **del orquestador**, y el orquestador nunca sale con 3: sale con 1.
+   **La proteccion apuntaba al eslabon equivocado.**
+5. `Restart=on-failure` + `RestartSec=300` -> relanza a los 5 min. Ciclo de ~35 min.
+
+Y un segundo error independiente: el timer decia `OnCalendar=*-*-* 14:00:00`, que es
+**diario**, no mensual. `*-*-*` es "cualquier dia"; para mensual va `*-*-01`. El nombre y
+la descripcion decian "Mensual" y el calendario decia otra cosa; **manda el calendario**.
+
+**Lo que se cambio (2026-08-21):**
+
+- `Restart=on-failure` **comentado en las 9 units de ETL**, no solo en la que fallo. Sin
+  `Restart=`, systemd no puede relanzar en ciclo. Reintentar no sirve de nada aqui: si el
+  POS no ha publicado el dia, volver a intentarlo 5 minutos despues tampoco lo trae.
+- `ventas-pipeline-monthly.timer` -> `OnCalendar=*-*-01 14:00:00` (dia 1 de cada mes) y
+  **deshabilitado**, a la espera de decidir si ese validador debe existir.
+- Respaldos en `/etc/systemd/system/*.bak-20260821`.
+
+**PENDIENTE, opcional:** `etl_runner.py` sigue traduciendo el aviso a `failed`, asi que
+los informes dicen `successful: 0, failed: 6` aunque todo haya ido bien. Ya no causa
+bucle, pero es ruido que hace que nadie lea esos informes. El arreglo son 3 lineas:
+
+```python
+WARNING = "warning"                                    # 1. en el enum ETLStatus
+return self.status in (ETLStatus.SUCCESS, ETLStatus.WARNING)   # 2. property success
+if process.returncode in (0, 3):                       # 3. linea ~185
+    status = ETLStatus.SUCCESS if process.returncode == 0 else ETLStatus.WARNING
+```
+
+Ese fichero es de `root`, vive **fuera del repo** y no tiene tests ni CI: respaldar y
+probar un ETL suelto antes.
+
+**Como reconocer que volvio:**
+
+```bash
+ls /opt/ventas_pipeline/logs/report_monthly_validation_*.json | wc -l   # crece de golpe
+systemctl show ventas-pipeline-monthly -p NRestarts -p ActiveState
+grep -c '^Restart=on-failure' /etc/systemd/system/ventas-pipeline-*.service   # debe dar 0
+```
+
 ---
 
 ## 3.c Detectar dias incompletos (empresa faltante O empresa flaca)
