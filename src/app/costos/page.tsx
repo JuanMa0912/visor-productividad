@@ -178,15 +178,6 @@ export default function CostosPage() {
     () => (meta?.sedes ?? []).map((sede) => sede.key),
     [meta],
   );
-  const visibleSedeKeys = useMemo(
-    () =>
-      selectedEmpresas.length > 0
-        ? allSedeKeys.filter((key) =>
-            selectedEmpresas.some((emp) => key.startsWith(`${emp}|`)),
-          )
-        : allSedeKeys,
-    [allSedeKeys, selectedEmpresas],
-  );
 
   const empresaOptions = useMemo(
     () =>
@@ -300,12 +291,20 @@ export default function CostosPage() {
     }) => {
       const from = override?.from ?? dateStart;
       const to = override?.to ?? dateEnd;
-      const sedes = (override?.sedes ?? selectedSedes).filter((key) =>
-        selectedEmpresas.length === 0
-          ? true
-          : selectedEmpresas.some((emp) => key.startsWith(`${emp}|`)),
-      );
       if (!from || !to) return;
+      const requested = override?.sedes ?? selectedSedes;
+      const allVisible =
+        selectedEmpresas.length === 0
+          ? allSedeKeys
+          : allSedeKeys.filter((key) =>
+              selectedEmpresas.some((emp) => key.startsWith(`${emp}|`)),
+            );
+      const sedes = (requested.length > 0 ? requested : allVisible).filter(
+        (key) =>
+          selectedEmpresas.length === 0
+            ? true
+            : selectedEmpresas.some((emp) => key.startsWith(`${emp}|`)),
+      );
       if (sedes.length === 0) {
         setLoading(false);
         setMatrix({
@@ -413,10 +412,11 @@ export default function CostosPage() {
       selectedLineas,
       selectedSublineas,
       selectedProveedores,
-    selectedMarcas,
+      selectedMarcas,
       selectedItems,
       selectedSedes,
       selectedEmpresas,
+      allSedeKeys,
     ],
   );
 
@@ -483,25 +483,27 @@ export default function CostosPage() {
     if (!data.meta) throw new Error("Meta vacía");
     const start = data.meta.defaultStart;
     const end = data.meta.defaultEnd;
-    const empresas = data.meta.empresas ?? [];
-    const defaultEmpresa =
-      empresas.find((item) => item.id === "mercamio")?.id ??
-      empresas[0]?.id ??
-      "";
-    const sedeKeys = data.meta.sedes
-      .map((sede) => sede.key)
-      .filter((key) =>
-        defaultEmpresa ? key.startsWith(`${defaultEmpresa}|`) : true,
-      );
+    const sedeKeys = data.meta.sedes.map((sede) => sede.key);
     setMeta(data.meta);
     setDateStart(start);
     setDateEnd(end);
-    setSelectedEmpresas(defaultEmpresa ? [defaultEmpresa] : []);
-    // Las sedes arrancan VACIAS a proposito: el usuario elige cuales comparar.
-    // La empresa si queda precargada porque acota el desplegable de sedes.
+    setSelectedEmpresas([]);
     setSelectedSedes([]);
-    void sedeKeys;
-  }, []);
+    setFiltrosAplicados(
+      JSON.stringify({
+        dateStart: start,
+        dateEnd: end,
+        selectedEmpresas: [],
+        selectedSedes: [],
+        selectedLineas: [],
+        selectedSublineas: [],
+        selectedItems: [],
+        selectedProveedores: [],
+        selectedMarcas: [],
+      }),
+    );
+    void loadMatrix({ from: start, to: end, sedes: sedeKeys });
+  }, [loadMatrix]);
 
   useEffect(() => {
     if (status !== "authenticated" || !user) return;
@@ -663,8 +665,7 @@ export default function CostosPage() {
   const hayCambiosSinAplicar =
     filtrosAplicados !== null && filtrosAplicados !== filtrosActuales;
 
-  const puedeConsultar =
-    selectedSedes.length > 0 && Boolean(dateStart) && Boolean(dateEnd);
+  const puedeConsultar = Boolean(dateStart) && Boolean(dateEnd);
 
   const aplicarFiltros = useCallback(() => {
     if (!puedeConsultar) return;
@@ -821,9 +822,14 @@ export default function CostosPage() {
             </h1>
             <p className="mt-1 text-sm text-slate-500">
               {rangoLabel}
-              {selectedSedes.length > 0
-                ? ` · ${selectedSedes.length} ${selectedSedes.length === 1 ? "sede" : "sedes"}`
-                : ""}
+              {(() => {
+                const n =
+                  selectedSedes.length > 0
+                    ? selectedSedes.length
+                    : allSedeKeys.length;
+                if (n <= 0) return "";
+                return ` · ${n} ${n === 1 ? "sede" : "sedes"}`;
+              })()}
             </p>
           </div>
         </div>
@@ -933,11 +939,9 @@ export default function CostosPage() {
               label="Sedes"
               values={selectedSedes}
               options={sedeOptions}
-              emptyLabel="Elige sedes"
+              emptyLabel="Todas"
               searchable
-              onChange={(next) => {
-                setSelectedSedes(next.length > 0 ? next : visibleSedeKeys);
-              }}
+              onChange={setSelectedSedes}
             />
             <DiMultiSelect
               label="Líneas"
@@ -1051,10 +1055,6 @@ export default function CostosPage() {
               <span className="text-xs font-semibold text-blue-700">
                 Hay filtros sin aplicar
               </span>
-            ) : !puedeConsultar ? (
-              <span className="text-xs font-semibold text-amber-800">
-                Elige al menos una sede y pulsa Actualizar.
-              </span>
             ) : (
               <span className="text-xs text-slate-500">
                 La métrica se elige en las tarjetas de arriba.
@@ -1065,8 +1065,9 @@ export default function CostosPage() {
             {isSingleDay
               ? "Modo 1 día: precio venta / costo de entrada de ese día."
               : "Modo rango: promedio simple diario de precio venta y costo de entrada."}{" "}
-            Marca una o varias opciones en cada lista. Al menos una sede. En
-            kilos/margen se ve valor por kilo, kilos y margen vendido.
+            Marca una o varias opciones en cada lista. Vacío en empresa o sede
+            = todas. En kilos/margen se ve valor por kilo, kilos y margen
+            vendido.
           </p>
         </div>
 
@@ -1119,49 +1120,13 @@ export default function CostosPage() {
           </div>
           <div className="max-h-[min(70vh,820px)] overflow-auto">
             {!matrix || matrix.rows.length === 0 ? (
-              (selectedSedes.length === 0 || filtrosAplicados === null) &&
-                !loading ? (
-                // El tablero arranca sin sedes a proposito: se dice que hacer,
-                // en vez de dejar un "sin datos" que parece que algo fallo.
-                <div className="flex flex-col items-center gap-2 px-4 py-12 text-center">
-                  <svg
-                    width="28"
-                    height="28"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    className="text-slate-300"
-                    aria-hidden
-                  >
-                    <path d="M3 6h18M6 12h12M10 18h4" />
-                  </svg>
-                  <p className="text-sm font-semibold text-slate-700">
-                    {selectedSedes.length === 0
-                      ? "Elige las sedes que quieres comparar"
-                      : "Listo para consultar"}
-                  </p>
-                  <p className="max-w-sm text-xs text-slate-500">
-                    {selectedSedes.length === 0
-                      ? "El heatmap compara el costo de un mismo ítem entre sedes, así que necesita al menos una. Puedes marcar varias de una o varias empresas."
-                      : "Termina de ajustar los filtros y presiona Actualizar. La consulta ya no se dispara en cada clic: con varias sedes y un rango largo cada una cuesta segundos."}
-                  </p>
-                  {selectedSedes.length > 0 ? (
-                    <button
-                      type="button"
-                      onClick={aplicarFiltros}
-                      className="mt-1 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800"
-                    >
-                      Actualizar
-                    </button>
-                  ) : null}
-                </div>
+              loading ? (
+                <p className="px-4 py-8 text-sm text-slate-500">
+                  Consultando costo de entrada…
+                </p>
               ) : (
                 <p className="px-4 py-8 text-sm text-slate-500">
-                  {loading
-                    ? "Consultando costo de entrada…"
-                    : "Sin datos para el filtro."}
+                  Sin datos para el filtro.
                 </p>
               )
             ) : (
