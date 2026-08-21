@@ -11,10 +11,11 @@ import { INFORME_EMPRESA_ORDER, type InformeMetric } from "@/lib/informe-variaci
 export type InformeRankingDimension =
   | "emp"
   | "sede"
-  | "marca"
+  | "cat"
   | "lin"
   | "sub"
   | "prov"
+  | "marca"
   | "item";
 
 export const INFORME_RANKING_DIMENSIONS: Array<{
@@ -24,10 +25,11 @@ export const INFORME_RANKING_DIMENSIONS: Array<{
 }> = [
   { id: "emp", label: "Compañía", keyIndex: -2 },
   { id: "sede", label: "Sede", keyIndex: 0 },
-  { id: "marca", label: "Categoría", keyIndex: 1 },
+  { id: "cat", label: "Categoría", keyIndex: 1 },
   { id: "lin", label: "Línea", keyIndex: 2 },
   { id: "sub", label: "Sublínea", keyIndex: 3 },
   { id: "prov", label: "Empresa (proveedor)", keyIndex: -1 },
+  { id: "marca", label: "Marca", keyIndex: -3 },
   { id: "item", label: "Ítem", keyIndex: 4 },
 ];
 
@@ -95,7 +97,8 @@ const labelsForDimension = (
   }
   if (dimension === "lin") return payload.lins;
   if (dimension === "sub") return payload.subs;
-  if (dimension === "marca") return payload.cats;
+  if (dimension === "cat") return payload.cats;
+  if (dimension === "marca") return payload.marcas ?? ["(Sin marca)"];
   if (dimension === "prov") return payload.provs ?? ["(Sin proveedor)"];
   return payload.items;
 };
@@ -110,6 +113,7 @@ const rankingKeyForRow = (
   keyIndex: number,
 ): number => {
   if (dimension === "prov") return payload.itemProv?.[row[4]] ?? 0;
+  if (dimension === "marca") return payload.itemMarca?.[row[4]] ?? 0;
   if (dimension === "sede") return row[0];
   if (dimension === "emp") {
     const label = payload.sedes[row[0]]?.e ?? "";

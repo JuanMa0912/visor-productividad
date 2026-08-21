@@ -215,9 +215,11 @@ export function InformeRankingTable({
         Top {limit} por{" "}
         {INFORME_RANKING_DIMENSIONS.find((item) => item.id === dimension)?.label.toLowerCase()}{" "}
         × sede. Clic en una columna para mayor/menor. Las sedes van en el orden
-        del portal, sin código al inicio. Categoría es el tipo comercial.
-        Empresa (proveedor) y marca salen del maestro POS. Los filtros de
-        estructura de arriba aplican a este ranking. En ítem, cada sede muestra
+        del portal, sin código al inicio. Categoría es el tipo comercial. Marca
+        es la marca comercial del ítem, igual que Costos. Empresa (proveedor) es
+        el tercero individual (como Costos), no el criterio POS tipo MERCAMIO
+        FRUVER. Los filtros de estructura de arriba aplican a este ranking. En
+        ítem, cada sede muestra
         precio, margen y la letra ABCD (Pareto de ventas de esa sede).
       </p>
       <div className="overflow-x-auto">

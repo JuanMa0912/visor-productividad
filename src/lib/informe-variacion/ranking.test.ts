@@ -83,6 +83,36 @@ describe("buildInformeRankingRows", () => {
     assert.equal(rows[1]?.total[0], 40);
   });
 
+  it("agrupa por categoria comercial", () => {
+    const payload = prepareInformeData(samplePayload());
+    const rows = buildInformeRankingRows({
+      payload,
+      metric: "v",
+      pass: () => true,
+      dimension: "cat",
+    });
+    assert.equal(rows[0]?.label, "Asaderos");
+    assert.equal(rows[0]?.total[0], 360);
+  });
+
+  it("agrupa por marca comercial", () => {
+    const payload = prepareInformeData({
+      ...samplePayload(),
+      marcas: ["(Sin marca)", "Alpina", "Mercamio"],
+      itemMarca: [1, 2, 1],
+    });
+    const rows = buildInformeRankingRows({
+      payload,
+      metric: "v",
+      pass: () => true,
+      dimension: "marca",
+    });
+    assert.equal(rows[0]?.label, "Alpina");
+    assert.equal(rows[0]?.total[0], 240);
+    assert.equal(rows[1]?.label, "Mercamio");
+    assert.equal(rows[1]?.total[0], 120);
+  });
+
   it("agrupa por compañia", () => {
     const payload = prepareInformeData(samplePayload());
     const rows = buildInformeRankingRows({

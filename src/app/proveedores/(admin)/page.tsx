@@ -774,17 +774,29 @@ export default function ProveedoresBoardPage() {
           <div className="border-b border-slate-100 px-4 py-3 text-sm font-bold text-slate-900">
             Detalle de visitas
           </div>
-          <div className="overflow-x-auto">
+          <div className="max-h-[min(70vh,32rem)] overflow-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">
+              <thead className="sticky top-0 z-20 bg-slate-50 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
                 <tr>
-                  <th className="px-3 py-2.5">Sede</th>
-                  <th className="px-3 py-2.5">Proveedor</th>
-                  <th className="px-3 py-2.5">Visitante</th>
-                  <th className="px-3 py-2.5">Cédula</th>
-                  <th className="px-3 py-2.5">Entrada</th>
-                  <th className="px-3 py-2.5">Salida</th>
-                  <th className="px-3 py-2.5 text-right">Min</th>
+                  <th className="sticky top-0 bg-slate-50 px-3 py-2.5">Sede</th>
+                  <th className="sticky top-0 bg-slate-50 px-3 py-2.5">
+                    Proveedor
+                  </th>
+                  <th className="sticky top-0 bg-slate-50 px-3 py-2.5">
+                    Visitante
+                  </th>
+                  <th className="sticky top-0 bg-slate-50 px-3 py-2.5">
+                    Cédula
+                  </th>
+                  <th className="sticky top-0 bg-slate-50 px-3 py-2.5">
+                    Entrada
+                  </th>
+                  <th className="sticky top-0 bg-slate-50 px-3 py-2.5">
+                    Salida
+                  </th>
+                  <th className="sticky top-0 bg-slate-50 px-3 py-2.5 text-right">
+                    Min
+                  </th>
                 </tr>
               </thead>
               <tbody>
