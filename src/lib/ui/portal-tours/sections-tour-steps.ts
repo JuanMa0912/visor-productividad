@@ -37,7 +37,7 @@ export const buildPortalSectionsTourSteps = (
         venta: {
           title: "Sección Venta",
           description:
-            "Resultado comercial: ventas por ítem, inventario y análisis frente a la venta.",
+            "Resultado comercial: días de inventario (con pestañas de inventario y ventas por ítem) y el resto de módulos de venta.",
         },
         producto: {
           title: "Sección Producto",

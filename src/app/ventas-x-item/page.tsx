@@ -42,6 +42,7 @@ import {
   type VentasXItemRawRow,
 } from "@/lib/ventas/x-item";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { VentaItemBoardTabs } from "@/components/portal/venta-item-board-tabs";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
 import {
   TUTORIAL_LOCAL_STORAGE_KEYS,
@@ -1250,8 +1251,9 @@ export default function VentasXItemPage() {
                     Venta
                   </p>
                   <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
-                    Ventas por ítem(s) x sedes
+                    Ventas por ítem
                   </h1>
+                  <VentaItemBoardTabs active="ventas-x-item" className="mt-4" />
                   <p className="mt-2 text-sm leading-6 text-slate-600">
                     Consulta el comportamiento diario por empresa, sede e ítem
                     con el mismo estilo visual del portal.

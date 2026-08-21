@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Layers } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
+import { VentaItemBoardTabs } from "@/components/portal/venta-item-board-tabs";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { AnalisisInventarioBoard } from "./analisis-inventario-board";
 
@@ -53,7 +54,11 @@ export default function AnalisisDeInventarioPage() {
             <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-900">
               Días de inventario
             </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
+            <VentaItemBoardTabs
+              active="analisis-de-inventario"
+              className="mt-4 max-w-3xl"
+            />
+            <p className="mt-3 max-w-3xl text-sm leading-relaxed text-slate-600">
               Cobertura de inventario por sede con drill categoría → línea →
               sublínea → ítem y mapa de calor para comparar sedes.
             </p>

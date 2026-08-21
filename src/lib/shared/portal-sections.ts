@@ -34,8 +34,6 @@ export const PORTAL_SECTIONS: PortalSectionDefinition[] = [
       "Facilita una lectura rapida del desempeno comercial, tendencias y variaciones por sede, linea o producto.",
     href: "/venta",
     modules: [
-      "Ventas por item",
-      "Inventario x item",
       "Días de inventario",
       "Participación comercial",
       "Proveedores",

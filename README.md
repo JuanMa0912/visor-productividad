@@ -37,12 +37,12 @@ seguimiento operativo.
 | Informe variacion | `/informe-variacion` | `/api/informe-variacion` | Periodo actual vs periodo anterior (default MoM) y YoY; tablas por pestaña; ranking producto×sede; alcance por `allowed_lines` (asadero/fruver) |
 | Rotacion | `/rotacion` | `/api/rotacion`, `/api/rotacion/cero-estados*` | inventario, rotacion, ABCD, filtro CAT, estados de S.inventario (restock: conteo sin verificar/seguimiento/surtido) y auditoria |
 | Kardex de margen | `/kardex` | `/api/kardex/*` | detalle diario y resumenes con margen `SUM/SUM` |
-| Inventario x item | `/inventario-x-item` | `/api/inventario-x-item`, `/api/inventario-x-item/presets` | matrices, pivotes y presets por usuario |
-| Días de inventario | `/analisis-de-inventario` | `/api/analisis-de-inventario` | DI und/valor, drill sede→ítem y mapa de calor |
+| Inventario x item | `/inventario-x-item` | `/api/inventario-x-item`, `/api/inventario-x-item/presets` | pestaña del tablero Días de inventario; matrices, pivotes y presets por usuario |
+| Días de inventario | `/analisis-de-inventario` | `/api/analisis-de-inventario` | tablero con pestañas (DI, inventario por sede, ventas por ítem); DI und/valor, drill sede→ítem y mapa de calor |
 | Participación comercial | `/participacion-comercial` | `/api/participacion-comercial` | mix sede↔línea por almacén y drill completo |
 | Proveedores | `/proveedores`, `/proveedores/ingreso/[token]` | `/api/proveedores/visitas`, `/api/proveedores/ingreso`, `/api/proveedores/ventas`, `/api/proveedores/productividad` | Subtablero `proveedores`; QR público por sede; links/QR del tablero con `proveedores_qr`; visitas + ventas 30d + productividad und/kg/tx y volumen÷horas |
 | Órdenes de compra | `/ordenes-compra` | `/api/ordenes-compra` | Tablero opt-in (`ordenes-compra`): abiertas/incompletas/vencidas (SLA 7d); cumplimiento por días del mes (p. ej. 1–18); recarga diaria 08:00 |
-| Ventas x item | `/ventas-x-item` | `/api/ventas-x-item`, `/api/ventas-x-item/v2` | analisis por item, meta/summary/options y XLSX |
+| Ventas x item | `/ventas-x-item` | `/api/ventas-x-item`, `/api/ventas-x-item/v2` | pestaña del tablero Días de inventario; analisis por item, meta/summary/options y XLSX |
 | Horario y operacion | `/horario`, `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/checklists`, `/checklists/[id]`, `/checklists/panel` | `/api/jornada-extendida/*`, `/api/ingresar-horarios/*`, `/api/horarios-comparar`, `/api/hourly-analysis`, `/api/checklists/runs`, `/api/checklists/panel` | checklists 20 min, 1/mes por sede, roles encargado/revisor/panel y cruce de respuestas |
 | Cronograma | `/cronograma` | `/api/cronograma` | lectura de bases de datos embebidas en una pagina de Notion |
 | Excel DIAN | `/ExcelDian` | `/api/excel-dian/export` | exportes DIAN por empresa desde bases PostgreSQL separadas |
@@ -60,6 +60,9 @@ La definicion canonica esta en `src/lib/shared/portal-sections.ts`.
 
 `/tableros` existe solo como ruta legacy hacia `/secciones`. El termino
 "tablero" se mantiene por compatibilidad de base de datos y lenguaje historico.
+En `/secciones` y `/venta`, Días de inventario, inventario por sede y ventas
+por ítem se muestran como una sola tarjeta; cada vista sigue en su URL y
+subtablero de permisos.
 
 ## 3. Stack y arquitectura
 

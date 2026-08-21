@@ -5,14 +5,12 @@ import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   ArrowUpRight,
-  BarChart3,
   ChevronDown,
   ClipboardCheck,
   ClipboardList,
   Clock,
   GitCompare,
   LineChart,
-  Package,
   Percent,
   PieChart,
   RefreshCw,
@@ -103,33 +101,13 @@ const ACCENT: Record<PortalSectionId, AccentTone> = {
 /** Catálogo alineado a `/venta`, `/productividad` y `/horario`. */
 export const CONTROL_ROOM_MODULES: ControlRoomModule[] = [
   {
-    id: "ventas-x-item",
-    section: "venta",
-    icon: BarChart3,
-    badge: "VENTAS",
-    title: "Ventas por item",
-    description:
-      "Consulta el comportamiento de la venta por item y sede para detectar concentraciones, variaciones y participacion comercial.",
-    href: "/ventas-x-item",
-  },
-  {
-    id: "inventario-x-item",
-    section: "venta",
-    icon: Package,
-    badge: "INVENTARIO",
-    title: "Inventario x item",
-    description:
-      "Consolida el inventario por referencia y su lectura resumida dentro de la seccion de venta.",
-    href: "/inventario-x-item",
-  },
-  {
     id: "analisis-de-inventario",
     section: "venta",
     icon: PieChart,
     badge: "DIAS INV.",
     title: "Días de inventario",
     description:
-      "Mide cobertura de inventario por sede con drill a categoría, línea, sublínea e ítem, y mapa de calor.",
+      "Cobertura por sede, inventario por ítem y ventas por ítem en un mismo tablero con pestañas. Las URLs de cada vista se mantienen.",
     href: "/analisis-de-inventario",
   },
   {

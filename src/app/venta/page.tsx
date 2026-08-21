@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, ClipboardList, Package, PieChart, Share2, Tags, Truck } from "lucide-react";
+import { BarChart3, ClipboardList, PieChart, Share2, Tags, Truck } from "lucide-react";
 import { PortalBrandingHeader } from "@/components/portal/portal-branding-header";
 import {
   PortalHubHeroCard,
@@ -19,6 +19,11 @@ import {
   canAccessPreciosProveedor,
   canAccessProveedoresBoard,
 } from "@/lib/shared/special-role-features";
+import {
+  VENTA_ITEM_BOARD_MODULE_ID,
+  canAccessVentaItemBoard,
+  firstVentaItemBoardHref,
+} from "@/lib/shared/venta-item-board";
 import { useRequireAuth, usePermissions } from "@/lib/auth/auth-context";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
 import { PORTAL_HUB_TOUR_CONFIG } from "@/lib/ui/portal-tours/hub-tour-config";
@@ -31,30 +36,12 @@ import "@/lib/ui/product-tour/product-tour.css";
 
 const VENTA_MODULES: HubModuleItem[] = [
   {
-    id: "ventas-x-item",
-    icon: BarChart3,
-    badge: "VENTAS",
-    title: "Ventas por item",
-    description:
-      "Consulta el comportamiento de la venta por item y sede para detectar concentraciones, variaciones y participacion comercial.",
-    href: "/ventas-x-item",
-  },
-  {
-    id: "inventario-x-item",
-    icon: Package,
-    badge: "INVENTARIO",
-    title: "Inventario x item",
-    description:
-      "Consolida el inventario por referencia y su lectura resumida dentro de la seccion de venta.",
-    href: "/inventario-x-item",
-  },
-  {
     id: "analisis-de-inventario",
     icon: PieChart,
     badge: "DIAS INV.",
     title: "Días de inventario",
     description:
-      "Mide cobertura de inventario por sede con drill a categoría, línea, sublínea e ítem, y mapa de calor.",
+      "Cobertura por sede, inventario por ítem y ventas por ítem en un mismo tablero con pestañas.",
     href: "/analisis-de-inventario",
   },
   {
@@ -130,11 +117,21 @@ export default function VentaHubPage() {
             allowedSubdashboards,
           );
         }
+        if (module.id === VENTA_ITEM_BOARD_MODULE_ID) {
+          return canAccessVentaItemBoard(isAdmin, allowedSubdashboards);
+        }
         if (isAdmin) return true;
         const subId = resolvePortalSubsectionId(module.id);
         if (!subId) return false;
         return canAccessPortalSubsection(allowedSubdashboards, subId);
-      }),
+      }).map((module) =>
+        module.id === VENTA_ITEM_BOARD_MODULE_ID
+          ? {
+              ...module,
+              href: firstVentaItemBoardHref(isAdmin, allowedSubdashboards),
+            }
+          : module,
+      ),
     [allowedSubdashboards, isAdmin, user?.allowedDashboards],
   );
 

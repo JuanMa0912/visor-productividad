@@ -69,6 +69,7 @@ Codigo compartido sin UI de pagina.
 | `normalize.ts` | normalizacion de textos, sedes e IDs |
 | `utils.ts` | helpers genericos como `cn` |
 | `portal-sections.ts` | secciones UAID, subtableros, alias legacy y validacion de acceso |
+| `venta-item-board.ts` | pestañas compartidas de Días de inventario / inventario por sede / ventas por ítem |
 | `control-room-access.ts` | filtro de módulos de `/secciones`; mismas reglas que hubs `/venta`, `/productividad`, `/horario` |
 | `special-role-features.ts` | capacidades por `special_roles` |
 | `line-category-scope.ts` | alcance por `allowed_lines` (asadero → cat. `3`; fruver → linea N1 `01`) |
@@ -107,7 +108,7 @@ Codigo compartido sin UI de pagina.
 | Grupo | Rutas |
 | --- | --- |
 | Portal | `/`, `/login`, `/secciones`, `/tableros`, `/venta`, `/horario`, `/cuenta/contrasena`, `/cronograma` |
-| Venta | `/ventas-x-item`, `/inventario-x-item`, `/analisis-de-inventario`, `/participacion-comercial`, `/proveedores`, `/proveedores/ingreso/[token]` (público), `/costos` (subtablero opt-in; `/exp/precios-proveedor` redirige), `/ordenes-compra` (subtablero opt-in) |
+| Venta | `/analisis-de-inventario`, `/inventario-x-item`, `/ventas-x-item` (mismo tablero, 3 pestañas; URLs propias), `/participacion-comercial`, `/proveedores`, `/proveedores/ingreso/[token]` (público), `/costos` (subtablero opt-in; `/exp/precios-proveedor` redirige), `/ordenes-compra` (subtablero opt-in) |
 | Producto | `/productividad`, `/productividad/cajas`, `/margenes`, `/informe-variacion`, `/rotacion`, `/kardex`, `/prediccion-pedidos` |
 | Operacion | `/jornada-extendida`, `/ingresar-horarios`, `/horarios-comparar`, `/horarios`, `/horarios-guardados`, `/checklists`, `/checklists/[id]`, `/checklists/panel` |
 | Admin | `/admin/usuarios`, `/admin/usuarios/accesos`, `/admin/usuarios/accesos/pormes`, `/admin/usuarios/accesos/en-linea`, `/admin/usuarios/uso-tableros`, `/admin/usuarios/auditoria`, `/admin/usuarios/descargas`, `/admin/usuarios/[id]/metricas` |
@@ -137,7 +138,7 @@ Codigo compartido sin UI de pagina.
 | `rotacion/tutorial` | alias legacy de tutorial Rotación |
 | `ventas-x-item`, `ventas-x-item/v2` | ventas por item |
 | `inventario-x-item`, `inventario-x-item/presets` | inventario y presets; **sin Dinastía** (empresa/sedes excluidas en catálogo y consultas) |
-| `analisis-de-inventario` | días de inventario: `mode=meta|board|drill|heatmap|filters`; mes móvil vía `rotacion_*_periodo_std`; cache 5 min; alcance por sedes del usuario (orden `SEDE_ORDER`); filtros `empresas`, `sedes`, `lineas`, `sublineas`, `items`, `diMin` (DI días, respeta `metric`); en nivel ítem muestra proveedor (`proveedor_item` + `proveedor_pos_catalogo`); mapa: clic en sede ordena filas por DI (menos→mayor); detalle por sede ordena DI asc por defecto |
+| `analisis-de-inventario` | días de inventario: `mode=meta|board|drill|heatmap|filters`; mes móvil vía `rotacion_*_periodo_std`; cache 5 min; alcance por sedes del usuario (orden `SEDE_ORDER`); filtros `empresas`, `sedes`, `lineas`, `sublineas`, `items`, `diMin` (DI días, respeta `metric`); en nivel ítem muestra proveedor (`proveedor_item` + `proveedor_pos_catalogo`); mapa: clic en sede ordena filas por DI (menos→mayor); detalle por sede ordena DI asc por defecto. UI: pestaña del tablero compartido con `/inventario-x-item` y `/ventas-x-item` |
 | `participacion-comercial` | participación sede↔línea: `mode=meta|board|drill|matrix`; almacén + estructura; snapshot/periodo_std |
 | `costos` | tablero `/costos` (subtablero opt-in `precios-proveedor`; `/exp/precios-proveedor` redirige): heatmap ítem×sede; **costo de entrada = inventario ET/EF** (`cmmovimiento_inventario` en 217 → `orden_compra_linea` / `rotacion_salidas_dia`; si no hay ET/EF ese día, FR/OC); Mercatodo: ET tránsito + EF; precio venta no se toca; doble clic: $/kg, kilos y margen vendido; filtros multi-select (checks): empresa, sede (al menos una), línea, sublínea, ítem y proveedor; proveedor sin prefijo de empresa (Bogotá/Mercamio/Mercatodo); al expandir, el mismo nombre se agrupa en una fila y suma el costo; máx. 14 días |
 | `ordenes-compra` | tablero opt-in (`ordenes-compra` en `allowed_subdashboards`): OC incremental (pendiente/incompleta/vencida SLA 7d/cumplida); diario 08:00 dias nuevos + abiertas; cumplimiento `diaDesde`–`diaHasta` (día del documento, vencidas fuera; cerradas 100% + abiertas/incompletas por qty) |

@@ -51,6 +51,7 @@ import { DINASTIA_EMPRESA_CODE } from "@/lib/shared/data-tenant";
 import { formatDateLabel } from "@/lib/shared/utils";
 import { logExportDownload } from "@/lib/client/log-export-download";
 import { AppTopBar } from "@/components/portal/app-top-bar";
+import { VentaItemBoardTabs } from "@/components/portal/venta-item-board-tabs";
 import { useProductTour } from "@/lib/ui/product-tour/use-product-tour";
 import { TUTORIAL_LOCAL_STORAGE_KEYS, TUTORIAL_STATE_KEYS } from "@/lib/ui/tutorial-keys";
 import { INVENTARIO_X_ITEM_TOUR_ANCHOR } from "@/lib/ui/portal-tours/inventario-x-item-tour-anchors";
@@ -2443,8 +2444,9 @@ export default function InventarioXItemPage() {
                 Venta
               </p>
               <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
-                Inventario x item
+                Inventario por sede
               </h1>
+              <VentaItemBoardTabs active="inventario-x-item" className="mt-4" />
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 Filtra empresa, sede, linea, subcategoria e items para resumir
                 el inventario vigente por referencia usando el ultimo corte

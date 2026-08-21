@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { CONTROL_ROOM_MODULES } from "@/components/portal/portal-control-room";
 import {
   canSeeControlRoomModule,
+  filterControlRoomModules,
   type ControlRoomAccessInput,
 } from "./control-room-access";
 
@@ -30,6 +31,15 @@ describe("catalogo de sala de control", () => {
     assert.equal(moduleById("ordenes-compra").href, "/ordenes-compra");
     assert.equal(moduleById("checklists").href, "/checklists");
     assert.equal(moduleById("informe-variacion").href, "/informe-variacion");
+    assert.equal(moduleById("analisis-de-inventario").href, "/analisis-de-inventario");
+    assert.equal(
+      CONTROL_ROOM_MODULES.some((entry) => entry.id === "ventas-x-item"),
+      false,
+    );
+    assert.equal(
+      CONTROL_ROOM_MODULES.some((entry) => entry.id === "inventario-x-item"),
+      false,
+    );
   });
 });
 
@@ -47,7 +57,7 @@ describe("accesos de sala de control", () => {
     const user = base({ allowedSubdashboards: null });
     assert.equal(canSeeControlRoomModule(moduleById("precios-proveedor"), user), false);
     assert.equal(canSeeControlRoomModule(moduleById("ordenes-compra"), user), false);
-    assert.equal(canSeeControlRoomModule(moduleById("ventas-x-item"), user), true);
+    assert.equal(canSeeControlRoomModule(moduleById("analisis-de-inventario"), user), true);
     assert.equal(canSeeControlRoomModule(moduleById("checklists"), user), true);
   });
 
@@ -77,8 +87,25 @@ describe("accesos de sala de control", () => {
 
   it("oculta módulos de secciones que el usuario no tiene", () => {
     const onlyVenta = base({ visibleSectionIds: ["venta"] });
-    assert.equal(canSeeControlRoomModule(moduleById("ventas-x-item"), onlyVenta), true);
+    assert.equal(canSeeControlRoomModule(moduleById("analisis-de-inventario"), onlyVenta), true);
     assert.equal(canSeeControlRoomModule(moduleById("margenes"), onlyVenta), false);
     assert.equal(canSeeControlRoomModule(moduleById("checklists"), onlyVenta), false);
+  });
+
+  it("el tablero de Días de inventario cubre cualquiera de las 3 pestañas", () => {
+    const onlyVentas = base({ allowedSubdashboards: ["ventas-x-item"] });
+    const onlyMix = base({ allowedSubdashboards: ["participacion-comercial"] });
+    assert.equal(
+      canSeeControlRoomModule(moduleById("analisis-de-inventario"), onlyVentas),
+      true,
+    );
+    assert.equal(
+      canSeeControlRoomModule(moduleById("analisis-de-inventario"), onlyMix),
+      false,
+    );
+
+    const filtered = filterControlRoomModules(CONTROL_ROOM_MODULES, onlyVentas);
+    const board = filtered.find((entry) => entry.id === "analisis-de-inventario");
+    assert.equal(board?.href, "/ventas-x-item");
   });
 });

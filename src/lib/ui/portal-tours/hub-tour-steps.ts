@@ -19,7 +19,7 @@ const HUB_COPY: Record<
     hero:
       "Resume el enfoque comercial de esta sección y cuántos módulos tienes disponibles.",
     modules:
-      "Cada tarjeta abre un tablero: ventas por ítem, inventario consolidado o análisis de inventario.",
+      "Cada tarjeta abre un tablero. Días de inventario reúne cobertura, inventario por sede y ventas por ítem en pestañas.",
   },
   producto: {
     title: "Hub de Producto",

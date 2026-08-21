@@ -13,10 +13,16 @@ import {
   canAccessProveedoresBoard,
   canAccessRotacionBoard,
 } from "@/lib/shared/special-role-features";
+import {
+  VENTA_ITEM_BOARD_MODULE_ID,
+  canAccessVentaItemBoard,
+  firstVentaItemBoardHref,
+} from "@/lib/shared/venta-item-board";
 
 export type ControlRoomModuleAccess = {
   id: string;
   section: PortalSectionId;
+  href?: string;
 };
 
 export type ControlRoomAccessInput = {
@@ -73,6 +79,10 @@ export const canSeeControlRoomModule = (
     return canAccessPortalSubsection(subs, subId);
   }
 
+  if (module.id === VENTA_ITEM_BOARD_MODULE_ID) {
+    return canAccessVentaItemBoard(input.isAdmin, subs);
+  }
+
   if (input.isAdmin) return true;
   const subId = resolvePortalSubsectionId(module.id);
   if (!subId) return false;
@@ -83,4 +93,13 @@ export const canSeeControlRoomModule = (
 export const filterControlRoomModules = <T extends ControlRoomModuleAccess>(
   modules: T[],
   input: ControlRoomAccessInput,
-): T[] => modules.filter((module) => canSeeControlRoomModule(module, input));
+): T[] =>
+  modules
+    .filter((module) => canSeeControlRoomModule(module, input))
+    .map((module) => {
+      if (module.id !== VENTA_ITEM_BOARD_MODULE_ID) return module;
+      return {
+        ...module,
+        href: firstVentaItemBoardHref(input.isAdmin, input.allowedSubdashboards),
+      };
+    });
