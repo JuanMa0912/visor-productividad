@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  formatRestockSurtidoWhen,
   isLikelyBase64,
   parseRestockSurtidoFotoMime,
   restockSurtidoFotoDataUrl,
@@ -29,4 +30,13 @@ test("strips data URL y normaliza image/jpg", () => {
     restockSurtidoFotoDataUrl(inner, "image/jpeg"),
     `data:image/jpeg;base64,${inner}`,
   );
+});
+
+test("formatea cuándo se marcó surtido y rechaza fechas inválidas", () => {
+  assert.equal(formatRestockSurtidoWhen(null), null);
+  assert.equal(formatRestockSurtidoWhen("no-es-fecha"), null);
+  const formatted = formatRestockSurtidoWhen("2026-08-21T14:30:00.000Z");
+  assert.equal(typeof formatted, "string");
+  assert.ok(formatted && formatted.length > 0);
+  assert.match(formatted, /\d/);
 });

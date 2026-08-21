@@ -742,7 +742,7 @@ Migracion: `db/migrations/20260819_rotacion_restock_surtido_foto.sql`.
 | --- | --- |
 | `rotacion_restock_surtido_foto` | PK `(empresa, sede_id, item)`; `foto_base64` (texto SQL-safe) + `mime` + `updated_by` |
 
-La UI de rotacion (filtro restock, estado **surtido**) permite tomar/subir la foto en la fila. El listado GET no trae el binario; la vista previa pide el item. API: `/api/rotacion/restock-fotos`.
+La UI de rotacion (filtro restock, estado **surtido**) permite tomar/subir la foto en la fila. **Auditar** (por ítem) pide GET del item y muestra la foto si existe más la última marca a `surtido` (`rotacion_cero_item_estado_audit`, con fallback a `rotacion_cero_item_estado.updated_at`). El listado GET no trae el binario. API: `/api/rotacion/restock-fotos`.
 
 Actualizar este documento cuando cambien migraciones, tablas leidas, columnas
 dinamicas, indices acordados en produccion o bases externas.

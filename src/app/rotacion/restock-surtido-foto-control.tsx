@@ -1,12 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Camera, ImageIcon, Loader2, X } from "lucide-react";
+import { Camera, ClipboardCheck, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getCookieValue, type RotationRow } from "./rotacion-preamble";
 import {
   RESTOCK_SURTIDO_FOTO_JPEG_QUALITY,
   RESTOCK_SURTIDO_FOTO_MAX_EDGE_PX,
+  formatRestockSurtidoWhen,
   restockSurtidoFotoDataUrl,
 } from "@/lib/rotacion/restock-surtido-foto";
 import type { CeroRotacionEstado } from "@/lib/rotacion/cero-estado";
@@ -57,6 +58,13 @@ type RestockSurtidoFotoControlProps = {
   onError: (message: string) => void;
 };
 
+type RestockAuditPreview = {
+  src: string | null;
+  fotoUpdatedAt: string | null;
+  surtidoAt: string | null;
+  surtidoUsername: string | null;
+};
+
 export function RestockSurtidoFotoControl({
   row,
   estado,
@@ -68,10 +76,7 @@ export function RestockSurtidoFotoControl({
 }: RestockSurtidoFotoControlProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState<{
-    src: string;
-    open: boolean;
-  } | null>(null);
+  const [preview, setPreview] = useState<RestockAuditPreview | null>(null);
 
   const canCapture = estado === "surtido";
 
@@ -112,7 +117,7 @@ export function RestockSurtidoFotoControl({
     }
   };
 
-  const openPreview = async () => {
+  const openAudit = async () => {
     setBusy(true);
     try {
       const params = new URLSearchParams({
@@ -126,28 +131,40 @@ export function RestockSurtidoFotoControl({
         cache: "no-store",
       });
       const payload = (await res.json()) as {
-        foto?: { fotoBase64: string; mime: string } | null;
+        foto?: { fotoBase64: string; mime: string; updatedAt?: string } | null;
+        surtido?: { at: string; username: string | null } | null;
         error?: string;
       };
-      if (!res.ok) throw new Error(payload.error ?? "No se pudo cargar la foto.");
-      if (!payload.foto) {
-        onHasPhotoChange(false);
-        onError("Esta fila aun no tiene foto.");
+      if (!res.ok) throw new Error(payload.error ?? "No se pudo cargar la auditoria.");
+      if (payload.foto) {
+        onHasPhotoChange(true);
+        setPreview({
+          src: restockSurtidoFotoDataUrl(
+            payload.foto.fotoBase64,
+            payload.foto.mime,
+          ),
+          fotoUpdatedAt: payload.foto.updatedAt ?? null,
+          surtidoAt: payload.surtido?.at ?? null,
+          surtidoUsername: payload.surtido?.username ?? null,
+        });
         return;
       }
+      onHasPhotoChange(false);
       setPreview({
-        open: true,
-        src: restockSurtidoFotoDataUrl(
-          payload.foto.fotoBase64,
-          payload.foto.mime,
-        ),
+        src: null,
+        fotoUpdatedAt: null,
+        surtidoAt: payload.surtido?.at ?? null,
+        surtidoUsername: payload.surtido?.username ?? null,
       });
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Error cargando la foto.");
+      onError(err instanceof Error ? err.message : "Error cargando la auditoria.");
     } finally {
       setBusy(false);
     }
   };
+
+  const surtidoWhen = formatRestockSurtidoWhen(preview?.surtidoAt);
+  const fotoWhen = formatRestockSurtidoWhen(preview?.fotoUpdatedAt);
 
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -180,48 +197,98 @@ export function RestockSurtidoFotoControl({
           {hasPhoto ? "Cambiar foto" : "Tomar foto"}
         </Button>
       ) : null}
-      {hasPhoto ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={busy}
-          className="h-7 gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-teal-800"
-          onClick={() => void openPreview()}
-        >
-          <ImageIcon className="h-3 w-3" />
-          Ver foto
-        </Button>
-      ) : null}
-      {preview?.open ? (
+      <Button
+        type="button"
+        variant={hasPhoto ? "outline" : "ghost"}
+        size="sm"
+        disabled={busy}
+        className={`h-7 gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide ${
+          hasPhoto
+            ? "border-teal-200 bg-teal-50/80 text-teal-900 hover:bg-teal-100"
+            : "text-slate-700"
+        }`}
+        onClick={() => void openAudit()}
+      >
+        {busy ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <ClipboardCheck className="h-3 w-3" />
+        )}
+        Auditar
+      </Button>
+      {preview ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4"
           role="dialog"
           aria-modal="true"
-          aria-label="Vista previa de la foto de surtido"
+          aria-labelledby="restock-surtido-audit-title"
           onClick={() => setPreview(null)}
         >
           <div
-            className="relative max-h-[90vh] max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl"
+            className="relative flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <button
-              type="button"
-              className="absolute right-2 top-2 rounded-full bg-white/90 p-1 text-slate-700 shadow"
-              onClick={() => setPreview(null)}
-              aria-label="Cerrar"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={preview.src}
-              alt={`Surtido ${row.item}`}
-              className="max-h-[85vh] w-full object-contain"
-            />
-            <p className="px-3 py-2 text-xs text-slate-600">
-              {row.item} · {row.descripcion}
-            </p>
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Auditoría de restock
+                </p>
+                <h2
+                  id="restock-surtido-audit-title"
+                  className="truncate font-mono text-sm font-semibold text-slate-900"
+                >
+                  {row.item}
+                </h2>
+                <p className="truncate text-xs text-slate-500">
+                  {row.descripcion}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-full bg-white p-1 text-slate-700 shadow-sm ring-1 ring-slate-200"
+                onClick={() => setPreview(null)}
+                aria-label="Cerrar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex min-h-[180px] items-center justify-center overflow-auto bg-slate-50 p-4">
+              {preview.src ? (
+                // eslint-disable-next-line @next/next/no-img-element -- base64 en memoria, no pasa por el optimizador
+                <img
+                  src={preview.src}
+                  alt={`Evidencia de surtido del ítem ${row.item}`}
+                  className="max-h-[62vh] w-full rounded-lg object-contain"
+                />
+              ) : (
+                <p className="px-4 text-center text-sm text-slate-500">
+                  Este ítem aún no tiene foto de evidencia.
+                </p>
+              )}
+            </div>
+            <div className="space-y-1 border-t border-slate-100 px-4 py-3 text-xs text-slate-600">
+              <p>
+                Habilitado como surtido:{" "}
+                {surtidoWhen ? (
+                  <strong className="font-semibold text-slate-900">
+                    {surtidoWhen}
+                    {preview.surtidoUsername
+                      ? ` · ${preview.surtidoUsername}`
+                      : ""}
+                  </strong>
+                ) : (
+                  <span className="text-slate-500">aún no se ha marcado</span>
+                )}
+              </p>
+              {preview.src && fotoWhen ? (
+                <p>
+                  Foto subida:{" "}
+                  <strong className="font-semibold text-slate-900">
+                    {fotoWhen}
+                  </strong>
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}

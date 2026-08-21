@@ -147,6 +147,74 @@ const isAuthorizedScope = (
   sedeId: string,
 ) => scopes.some((scope) => scope.empresa === empresa && scope.sedeId === sedeId);
 
+const queryLastRestockSurtido = async (
+  pool: Awaited<ReturnType<typeof getDbPool>>,
+  empresa: string,
+  sedeId: string,
+  item: string,
+): Promise<{ at: string; username: string | null } | null> => {
+  try {
+    const audit = await pool.query<{
+      changed_at: Date;
+      username: string | null;
+    }>(
+      `
+      SELECT a.changed_at, u.username
+      FROM rotacion_cero_item_estado_audit a
+      LEFT JOIN app_users u ON u.id = a.changed_by
+      WHERE a.empresa = $1
+        AND a.sede_id = $2
+        AND a.item = $3
+        AND a.context = 'restock'
+        AND a.estado_nuevo = 'surtido'
+      ORDER BY a.changed_at DESC
+      LIMIT 1
+      `,
+      [empresa, sedeId, item],
+    );
+    const row = audit.rows[0];
+    if (row) {
+      return {
+        at: row.changed_at.toISOString(),
+        username: row.username?.trim() || null,
+      };
+    }
+  } catch (error) {
+    if (!isUndefinedRelation(error)) throw error;
+  }
+
+  try {
+    const estado = await pool.query<{
+      updated_at: Date;
+      username: string | null;
+    }>(
+      `
+      SELECT e.updated_at, u.username
+      FROM rotacion_cero_item_estado e
+      LEFT JOIN app_users u ON u.id = e.updated_by
+      WHERE e.empresa = $1
+        AND e.sede_id = $2
+        AND e.item = $3
+        AND e.context = 'restock'
+        AND e.estado = 'surtido'
+      LIMIT 1
+      `,
+      [empresa, sedeId, item],
+    );
+    const row = estado.rows[0];
+    if (row) {
+      return {
+        at: row.updated_at.toISOString(),
+        username: row.username?.trim() || null,
+      };
+    }
+  } catch (error) {
+    if (!isUndefinedRelation(error)) throw error;
+  }
+
+  return null;
+};
+
 export async function GET(request: Request) {
   const session = await requireAuthSession();
   if (!session) {
@@ -211,35 +279,41 @@ export async function GET(request: Request) {
         [empresa, sedeId, item],
       );
       const row = result.rows[0];
-      if (!row) {
-        return withSession(
-          session,
-          NextResponse.json(
-            { foto: null },
-            { headers: { "Cache-Control": CACHE_CONTROL } },
-          ),
-        );
-      }
+      const surtido = await queryLastRestockSurtido(
+        pool,
+        empresa,
+        sedeId,
+        item,
+      );
       return withSession(
         session,
         NextResponse.json(
           {
-            foto: {
-              fotoBase64: row.foto_base64,
-              mime: row.mime,
-              updatedAt: row.updated_at.toISOString(),
-            },
+            foto: row
+              ? {
+                  fotoBase64: row.foto_base64,
+                  mime: row.mime,
+                  updatedAt: row.updated_at.toISOString(),
+                }
+              : null,
+            surtido,
           },
           { headers: { "Cache-Control": CACHE_CONTROL } },
         ),
       );
     } catch (error) {
       if (isMissingFotoTable(error)) {
+        const surtido = await queryLastRestockSurtido(
+          pool,
+          empresa,
+          sedeId,
+          item,
+        );
         return withSession(
           session,
           NextResponse.json(
-            { error: `Falta la tabla de fotos de restock. ${MIGRATION_HINT}` },
-            { status: 503, headers: { "Cache-Control": CACHE_CONTROL } },
+            { foto: null, surtido },
+            { headers: { "Cache-Control": CACHE_CONTROL } },
           ),
         );
       }

@@ -60,3 +60,15 @@ export const restockSurtidoFotoDataUrl = (
   base64: string,
   mime: RestockSurtidoFotoMime | string,
 ): string => `data:${mime};base64,${base64}`;
+
+export const formatRestockSurtidoWhen = (
+  iso: string | null | undefined,
+): string | null => {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date.toLocaleString("es-CO", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+};

@@ -131,7 +131,7 @@ Codigo compartido sin UI de pagina.
 | `rotacion` | rotacion e inventario con baja salida; capitulos A-B-C, criticos (D+0+S) y sobrestock (32+ / 50+ dias de inventario); filtro CAT (multi); restock muestra conteo S.inventario (sin verificar / seguimiento / surtido); tabs Tabla/Grafico encima de filtros; Grafico precarga sedes Mercamio/Mercatodo/Merkmios (sin Dinastia, IDB) y filtra en cliente sedes/lineas/sublineas/items; cortes D/0/S, agrupacion sede/linea/sublinea/item; panel Resultado de gestion: barras mensuales por sede (plata/unidades) con filtros propios de sede y mes (`rotacion_gestion_semana_roll`) |
 | `rotacion/gestion` | GET KPIs D+0+S de un rango (`start`/`end`/`sedeScope`) o `mode=trend` (series mensuales por sede desde el roll) |
 | `rotacion/cero-estados`, `rotacion/cero-estados/audit` | estado S.inventario y auditoria |
-| `rotacion/restock-fotos` | GET metadatos o foto base64; PUT foto de item restock ya surtido |
+| `rotacion/restock-fotos` | GET metadatos o foto base64 + última marca a surtido; PUT foto de item restock ya surtido. En tabla restock, **Auditar** abre la evidencia y la hora de surtido |
 | `checklists/runs` | GET/POST intento: 20 min, rol encargado/revisor, 1/mes por sede, guardar respuestas, foto obligatoria en P/NC, firma al finalizar, desbloqueo y borrado desde panel |
 | `checklists/panel` | GET listado mensual de sedes/puntajes/tiempo/responsable; `?runId=` detalle (respuestas, fotos, firma) para revisar; errores de esquema/SQL se devuelven en JSON |
 | `portal/freshness` | GET último corte: `refreshed_at` de rotación/informe + stats de `asistencia_horas`; sello de `/secciones` |
