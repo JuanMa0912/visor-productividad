@@ -1,5 +1,13 @@
 export type PreciosProveedorMetric = "pvu" | "pcu" | "margenPct" | "units";
 
+/** Fechas default/min/max. Sale en un round-trip corto para no frenar la matriz. */
+export type PreciosProveedorBounds = {
+  minDate: string | null;
+  maxDate: string | null;
+  defaultStart: string;
+  defaultEnd: string;
+};
+
 export type PreciosProveedorMeta = {
   minDate: string | null;
   maxDate: string | null;

@@ -12,6 +12,7 @@ import { CostosKpis, type CostosPrevTotals } from "@/app/costos/costos-kpis";
 import { CostosRail } from "@/app/costos/costos-rail";
 import { CostosDrawer } from "@/app/costos/costos-drawer";
 import type {
+  PreciosProveedorBounds,
   PreciosProveedorExpandRow,
   PreciosProveedorMatrix,
   PreciosProveedorMeta,
@@ -105,21 +106,6 @@ const unitMoney = (value: number) =>
     maximumFractionDigits: 0,
   });
 
-const toIsoLocal = (date: Date) => {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-};
-
-/** Día anterior (calendario local); la meta del API puede ajustar al último día con datos. */
-const yesterdayIso = () => {
-  const day = new Date();
-  day.setHours(12, 0, 0, 0);
-  day.setDate(day.getDate() - 1);
-  return toIsoLocal(day);
-};
-
 export default function CostosPage() {
   const router = useRouter();
   const { user, status } = useRequireAuth();
@@ -132,8 +118,8 @@ export default function CostosPage() {
 
   const [meta, setMeta] = useState<PreciosProveedorMeta | null>(null);
   const [matrix, setMatrix] = useState<PreciosProveedorMatrix | null>(null);
-  const [dateStart, setDateStart] = useState(yesterdayIso);
-  const [dateEnd, setDateEnd] = useState(yesterdayIso);
+  const [dateStart, setDateStart] = useState("");
+  const [dateEnd, setDateEnd] = useState("");
   const [selectedLineas, setSelectedLineas] = useState<string[]>([]);
   const [selectedSublineas, setSelectedSublineas] = useState<string[]>([]);
   const [selectedEmpresas, setSelectedEmpresas] = useState<string[]>([]);
@@ -299,12 +285,15 @@ export default function CostosPage() {
       const from = override?.from ?? dateStart;
       const to = override?.to ?? dateEnd;
       if (!from || !to) return;
+      const requested = override?.sedes ?? selectedSedes;
+      const wantsAllSedes =
+        requested.length === 0 && selectedEmpresas.length === 0;
       const sedes = resolveCostosSedes(
-        override?.sedes ?? selectedSedes,
+        requested,
         allSedeKeys,
         selectedEmpresas,
       );
-      if (sedes.length === 0) {
+      if (sedes.length === 0 && !wantsAllSedes) {
         setLoading(false);
         setMatrix({
           columns: [],
@@ -329,8 +318,8 @@ export default function CostosPage() {
           from,
           to,
           limit: selectedItems.length > 0 ? String(selectedItems.length) : "40",
-          sedes: sedes.join(","),
         });
+        if (sedes.length > 0) params.set("sedes", sedes.join(","));
         if (selectedLineas.length > 0) {
           params.set("linea", selectedLineas.join(","));
         }
@@ -484,6 +473,25 @@ export default function CostosPage() {
   );
   loadExpandRef.current = loadExpand;
 
+  const applyBounds = useCallback((bounds: PreciosProveedorBounds) => {
+    setDateStart(bounds.defaultStart);
+    setDateEnd(bounds.defaultEnd);
+  }, []);
+
+  const loadBounds = useCallback(async () => {
+    const res = await fetch("/api/costos?mode=bounds", {
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+    const data = (await res.json()) as {
+      bounds?: PreciosProveedorBounds;
+      error?: string;
+    };
+    if (!res.ok) throw new Error(data.error ?? "Error fechas");
+    if (!data.bounds) throw new Error("Fechas vacías");
+    applyBounds(data.bounds);
+  }, [applyBounds]);
+
   const loadMeta = useCallback(async () => {
     const res = await fetch("/api/costos?mode=meta", {
       cache: "no-store",
@@ -495,14 +503,9 @@ export default function CostosPage() {
     };
     if (!res.ok) throw new Error(data.error ?? "Error meta");
     if (!data.meta) throw new Error("Meta vacía");
-    const start = data.meta.defaultStart;
-    const end = data.meta.defaultEnd;
     setMeta(data.meta);
-    setDateStart(start);
-    setDateEnd(end);
-    setSelectedEmpresas([]);
-    setSelectedSedes([]);
-  }, []);
+    applyBounds(data.meta);
+  }, [applyBounds]);
 
   useEffect(() => {
     if (status !== "authenticated" || !user) return;
@@ -511,6 +514,9 @@ export default function CostosPage() {
 
   useEffect(() => {
     if (status !== "authenticated" || !canAccess) return;
+    void loadBounds().catch(() => {
+      // La matriz arranca igual con el día local; meta corrige si hay desfase.
+    });
     void loadMeta().catch((err) => {
       setError(
         err instanceof Error
@@ -671,15 +677,17 @@ export default function CostosPage() {
   const liveFilterKey = `${dateStart}|${dateEnd}|${selectedEmpresas.join(",")}|${selectedSedes.join(",")}|${selectedLineas.join(",")}|${selectedSublineas.join(",")}`;
 
   useEffect(() => {
-    if (!meta || !dateStart || !dateEnd) return;
+    if (status !== "authenticated" || !canAccess) return;
+    if (!dateStart || !dateEnd) return;
+    if (selectedEmpresas.length > 0 && allSedeKeys.length === 0) return;
     const timer = window.setTimeout(() => {
       setFiltrosAplicados(filtrosActuales);
       void loadMatrix();
-    }, 150);
+    }, 250);
     return () => window.clearTimeout(timer);
     // Ítems, proveedor y marca siguen en Actualizar.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- live filters only
-  }, [meta, liveFilterKey]);
+  }, [status, canAccess, liveFilterKey]);
 
   if (status !== "authenticated" || !user) {
     return (

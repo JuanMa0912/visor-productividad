@@ -1,8 +1,12 @@
-import type { PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
+import { getDbPool } from "@/lib/db";
 import { listMargenSedeCatalogOptions } from "@/lib/margenes/margen-sede-catalog";
 import { empresaLabel } from "@/lib/margenes/margen-final-query";
+import { getCachedQuery, setCachedQuery } from "@/lib/margenes/query-cache";
 import { getSedeOrderIndexForRawName } from "@/lib/shared/constants";
+import { pickCostosMatrixItemIds } from "@/lib/exp-precios-proveedor/matrix-rank";
 import type {
+  PreciosProveedorBounds,
   PreciosProveedorCell,
   PreciosProveedorExpandRow,
   PreciosProveedorMatrix,
@@ -30,6 +34,27 @@ import {
 
 const toNum = (value: string | number | null | undefined) =>
   Number(value ?? 0) || 0;
+
+const COSTOS_BOUNDS_CACHE_KEY = "costos:bounds:v1";
+const COSTOS_META_CACHE_KEY = "costos:meta:v1";
+const COSTOS_CATALOG_TTL_MS = 5 * 60 * 1000;
+
+const isCachedBounds = (value: unknown): value is PreciosProveedorBounds =>
+  Boolean(
+    value &&
+      typeof value === "object" &&
+      "defaultStart" in value &&
+      "defaultEnd" in value &&
+      !("lineas" in value),
+  );
+
+const isCachedMeta = (value: unknown): value is PreciosProveedorMeta =>
+  Boolean(
+    value &&
+      typeof value === "object" &&
+      "lineas" in value &&
+      "defaultStart" in value,
+  );
 
 /** Join opcional a maestro comercial por NIT (misma empresa). */
 const PROVEEDOR_TERCERO_LATERAL = `
@@ -130,13 +155,8 @@ async function queryOrdenCompraLineaProveedores(
   const map = new Map<string, OcLineProveedor[]>();
   if (itemIds.length === 0) return map;
 
-  const exists = await client.query<{ ok: boolean }>(`
-    SELECT EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = 'orden_compra_linea'
-    ) AS ok
-  `);
-  if (!exists.rows[0]?.ok) return map;
+  const schema = await ensureCostosSchema(client);
+  if (!schema.oc) return map;
 
   const res = await client.query<{
     empresa: string;
@@ -363,7 +383,7 @@ export const prototypeSedeColumns = (): PreciosProveedorSedeColumn[] =>
  * Si ese día no existe en el roll, cae al MAX disponible (último día con datos).
  */
 export const resolveDefaultDateRange = async (
-  client: PoolClient,
+  client: Pool | PoolClient,
 ): Promise<{ start: string; end: string; min: string | null; max: string | null }> => {
   const bounds = await client.query<{ min: string | null; max: string | null }>(`
     SELECT MIN(fecha_dcto) AS min, MAX(fecha_dcto) AS max
@@ -385,61 +405,85 @@ export const resolveDefaultDateRange = async (
   return { start: day, end: day, min, max };
 };
 
-export const queryPreciosProveedorMeta = async (
-  client: PoolClient,
-): Promise<PreciosProveedorMeta> => {
-  const range = await resolveDefaultDateRange(client);
-  const catalogEnd = isoToCompact(range.max ?? range.end);
-  const catalogStart = compactShiftDays(catalogEnd, -120);
-  const marcas = await client.query<{ id: string; label: string }>(`
-    SELECT BTRIM(marca) AS id, BTRIM(marca) AS label
-    FROM proveedor_item
-    WHERE NULLIF(BTRIM(COALESCE(marca, '')), '') IS NOT NULL
-    GROUP BY BTRIM(marca)
-    ORDER BY 1
-    LIMIT 4000
-  `);
-  const lineas = await client.query<{ id: string; label: string }>(
-    `
-    SELECT id_linea1 AS id,
-           COALESCE(NULLIF(MAX(nombre_linea1), ''), id_linea1) AS label
-    FROM margen_item_dia_roll
-    WHERE fecha_dcto >= $1
-      AND fecha_dcto <= $2
-      AND NULLIF(id_linea1, '') IS NOT NULL
-      AND TRIM(COALESCE(id_tipo, '')) = '4'
-    GROUP BY id_linea1
-    ORDER BY 1
-    LIMIT 80
-    `,
-    [catalogStart, catalogEnd],
-  );
-  const sublineas = await client.query<{
-    id: string;
-    label: string;
-    linea_id: string;
-  }>(
-    `
-    SELECT
-      id_linea2 AS id,
-      COALESCE(NULLIF(MAX(nombre_linea2), ''), id_linea2) AS label,
-      MAX(id_linea1) AS linea_id
-    FROM margen_item_dia_roll
-    WHERE fecha_dcto >= $1
-      AND fecha_dcto <= $2
-      AND NULLIF(id_linea2, '') IS NOT NULL
-      AND TRIM(COALESCE(id_tipo, '')) = '4'
-    GROUP BY id_linea2
-    ORDER BY 1
-    LIMIT 400
-    `,
-    [catalogStart, catalogEnd],
-  );
-  return {
+export const queryPreciosProveedorBounds = async (
+  db?: Pool | PoolClient,
+): Promise<PreciosProveedorBounds> => {
+  const cached = getCachedQuery(COSTOS_BOUNDS_CACHE_KEY);
+  if (isCachedBounds(cached)) return cached;
+  const conn = db ?? (await getDbPool());
+  const range = await resolveDefaultDateRange(conn);
+  const bounds: PreciosProveedorBounds = {
     minDate: range.min,
     maxDate: range.max,
     defaultStart: range.start,
     defaultEnd: range.end,
+  };
+  setCachedQuery(COSTOS_BOUNDS_CACHE_KEY, bounds, COSTOS_CATALOG_TTL_MS);
+  return bounds;
+};
+
+export const queryPreciosProveedorMeta = async (
+  _client?: PoolClient,
+): Promise<PreciosProveedorMeta> => {
+  const cached = getCachedQuery(COSTOS_META_CACHE_KEY);
+  if (isCachedMeta(cached)) return cached;
+  const pool = await getDbPool();
+  const range = await queryPreciosProveedorBounds(pool);
+  const catalogEnd = isoToCompact(range.maxDate ?? range.defaultEnd);
+  const catalogStart = compactShiftDays(catalogEnd, -120);
+  const [marcas, lineas, sublineas, proveedores] = await Promise.all([
+    pool.query<{ id: string; label: string }>(`
+      SELECT BTRIM(marca) AS id, BTRIM(marca) AS label
+      FROM proveedor_item
+      WHERE NULLIF(BTRIM(COALESCE(marca, '')), '') IS NOT NULL
+      GROUP BY BTRIM(marca)
+      ORDER BY 1
+      LIMIT 4000
+    `),
+    pool.query<{ id: string; label: string }>(
+      `
+      SELECT id_linea1 AS id,
+             COALESCE(NULLIF(MAX(nombre_linea1), ''), id_linea1) AS label
+      FROM margen_item_dia_roll
+      WHERE fecha_dcto >= $1
+        AND fecha_dcto <= $2
+        AND NULLIF(id_linea1, '') IS NOT NULL
+        AND TRIM(COALESCE(id_tipo, '')) = '4'
+      GROUP BY id_linea1
+      ORDER BY 1
+      LIMIT 80
+      `,
+      [catalogStart, catalogEnd],
+    ),
+    pool.query<{
+      id: string;
+      label: string;
+      linea_id: string;
+    }>(
+      `
+      SELECT
+        id_linea2 AS id,
+        COALESCE(NULLIF(MAX(nombre_linea2), ''), id_linea2) AS label,
+        MAX(id_linea1) AS linea_id
+      FROM margen_item_dia_roll
+      WHERE fecha_dcto >= $1
+        AND fecha_dcto <= $2
+        AND NULLIF(id_linea2, '') IS NOT NULL
+        AND TRIM(COALESCE(id_tipo, '')) = '4'
+      GROUP BY id_linea2
+      ORDER BY 1
+      LIMIT 400
+      `,
+      [catalogStart, catalogEnd],
+    ),
+    queryPreciosProveedorCatalogo(pool, catalogStart),
+  ]);
+  const { sedes, empresas } = catalogSedesAndEmpresas();
+  const meta: PreciosProveedorMeta = {
+    minDate: range.minDate,
+    maxDate: range.maxDate,
+    defaultStart: range.defaultStart,
+    defaultEnd: range.defaultEnd,
     lineas: lineas.rows.map((row) => ({
       id: String(row.id),
       label: `${row.id} · ${row.label}`,
@@ -449,14 +493,9 @@ export const queryPreciosProveedorMeta = async (
       label: `${row.id} · ${row.label}`,
       lineaId: String(row.linea_id ?? ""),
     })),
-    sedes: prototypeSedeColumns().map((col) => ({
-      key: col.key,
-      label: col.label,
-    })),
-    empresas: [...new Set(prototypeSedeColumns().map((col) => col.empresa))].map(
-      (id) => ({ id, label: empresaLabel(id) }),
-    ),
-    proveedores: await queryPreciosProveedorCatalogo(client, catalogStart),
+    sedes,
+    empresas,
+    proveedores,
     marcas: marcas.rows.map((row) => ({
       id: String(row.id ?? "").trim(),
       label: String(row.label ?? "").trim(),
@@ -464,10 +503,12 @@ export const queryPreciosProveedorMeta = async (
     note:
       "Costo de entrada = inventario ET/EF del POS (cmmovimiento_inventario en 217). Si ese día no hay ET/EF, se usa el pedido FR/OC. En Mercatodo ET (tránsito) + EF. Precio venta no se toca. Doble clic: $/kg, kilos y margen vendido.",
   };
+  setCachedQuery(COSTOS_META_CACHE_KEY, meta, COSTOS_CATALOG_TTL_MS);
+  return meta;
 };
 
 async function queryPreciosProveedorCatalogo(
-  client: PoolClient,
+  _client: Pool | PoolClient,
   fromCompact?: string,
 ): Promise<Array<{ id: string; label: string }>> {
   const byId = new Map<string, string>();
@@ -477,43 +518,42 @@ async function queryPreciosProveedorCatalogo(
     const name = stripMercamioProveedorLabel(label.trim() || key);
     if (!byId.has(key)) byId.set(key, name);
   };
-  try {
-    const catalog = await client.query<{ id: string; label: string }>(`
-      SELECT
-        COALESCE(NULLIF(BTRIM(id_cricla1), ''), '@SP') AS id,
-        COALESCE(NULLIF(BTRIM(nombre), ''), id_cricla1, '(Sin proveedor)') AS label
-      FROM proveedor_pos_catalogo
-      WHERE COALESCE(activo, TRUE) IS TRUE
-      ORDER BY 2
-      LIMIT 400
-    `);
-    for (const row of catalog.rows) add(String(row.id), String(row.label));
-  } catch {
-    // catálogo opcional
-  }
-  try {
-    const ocParams = /^\d{8}$/.test(fromCompact ?? "")
-      ? [fromCompact]
-      : [];
-    const ocFechaSql = ocParams.length > 0 ? "AND fecha_dcto >= $1" : "";
-    const oc = await client.query<{ id: string; label: string }>(
-      `
-      SELECT
-        'oc:' || id_terc AS id,
-        COALESCE(NULLIF(BTRIM(MAX(terc_nombre)), ''), id_terc) AS label
-      FROM orden_compra_linea
-      WHERE id_terc <> ''
-        ${ocFechaSql}
-      GROUP BY id_terc
-      ORDER BY 2
-      LIMIT 400
-      `,
-      ocParams,
-    );
-    for (const row of oc.rows) add(String(row.id), String(row.label));
-  } catch {
-    // OC opcional
-  }
+  const pool = await getDbPool();
+  const ocParams = /^\d{8}$/.test(fromCompact ?? "")
+    ? [fromCompact]
+    : [];
+  const ocFechaSql = ocParams.length > 0 ? "AND fecha_dcto >= $1" : "";
+  const [catalog, oc] = await Promise.all([
+    pool
+      .query<{ id: string; label: string }>(`
+        SELECT
+          COALESCE(NULLIF(BTRIM(id_cricla1), ''), '@SP') AS id,
+          COALESCE(NULLIF(BTRIM(nombre), ''), id_cricla1, '(Sin proveedor)') AS label
+        FROM proveedor_pos_catalogo
+        WHERE COALESCE(activo, TRUE) IS TRUE
+        ORDER BY 2
+        LIMIT 400
+      `)
+      .catch(() => ({ rows: [] as Array<{ id: string; label: string }> })),
+    pool
+      .query<{ id: string; label: string }>(
+        `
+        SELECT
+          'oc:' || id_terc AS id,
+          COALESCE(NULLIF(BTRIM(MAX(terc_nombre)), ''), id_terc) AS label
+        FROM orden_compra_linea
+        WHERE id_terc <> ''
+          ${ocFechaSql}
+        GROUP BY id_terc
+        ORDER BY 2
+        LIMIT 400
+        `,
+        ocParams,
+      )
+      .catch(() => ({ rows: [] as Array<{ id: string; label: string }> })),
+  ]);
+  for (const row of catalog.rows) add(String(row.id), String(row.label));
+  for (const row of oc.rows) add(String(row.id), String(row.label));
   return [...byId.entries()]
     .map(([id, label]) => ({ id, label }))
     .sort((a, b) => a.label.localeCompare(b.label, "es"));
@@ -772,19 +812,9 @@ export const queryPreciosProveedorMatrix = async (
     )`;
   }
 
-  const provCheck = await client.query<{ ok: boolean; tercero: boolean }>(`
-    SELECT
-      EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'proveedor_item'
-      ) AS ok,
-      EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'proveedor_tercero'
-      ) AS tercero
-  `);
-  const hasProveedor = Boolean(provCheck.rows[0]?.ok);
-  const hasTercero = Boolean(provCheck.rows[0]?.tercero);
+  const provSchema = await ensureCostosSchema(client);
+  const hasProveedor = provSchema.proveedorItem;
+  const hasTercero = provSchema.proveedorTercero;
 
   const proveedorJoin = hasProveedor
     ? `
@@ -937,24 +967,21 @@ export const queryPreciosProveedorMatrix = async (
     params,
   );
 
-  const itemIds = [
-    ...new Set(result.rows.map((row) => String(row.id_item).trim()).filter(Boolean)),
-  ];
-  const costoEntrada = await queryCostoEntradaMap(client, {
-    fromIso: input.fromIso,
-    toIso: input.toIso,
-    itemIds,
-    columns,
-  });
-
-  const rowMap = new Map<
+  const itemDrafts = new Map<
     string,
     PreciosProveedorRow & {
       costoVenta: number;
       proveedores: Map<string, string>;
     }
   >();
-  const cells: PreciosProveedorCell[] = [];
+  const cellDrafts: Array<{
+    rowId: string;
+    sedeKey: string;
+    units: number;
+    sales: number;
+    costoVenta: number;
+    pvu: number;
+  }> = [];
   const sedeKeySet = new Set(sedeKeys);
 
   for (const row of result.rows) {
@@ -965,38 +992,28 @@ export const queryPreciosProveedorMatrix = async (
     const sales = toNum(row.ventas_netas);
     const pvu = toNum(row.pvu);
     const itemId = String(row.id_item).trim();
-    const pcu = costoEntrada.get(`${itemId}::${key}`) ?? 0;
-    // Costo contable de lo vendido (COGS). Se calculaba en el CTE agg y se
-    // descartaba en el mapeo; es lo que permite el margen vendido sin inventarlo.
     const costoVenta = toNum(row.costo_total);
-    const cost = units > 0 && pcu > 0 ? units * pcu : 0;
-
-    cells.push({
+    cellDrafts.push({
       rowId: itemId,
       sedeKey: key,
-      transito: 0,
       units,
       sales,
-      cost,
       costoVenta,
       pvu,
-      pcu,
-      margenPct: marginPct(sales > 0 ? sales : pvu * units, cost),
     });
 
     const provId = String(row.proveedor_id ?? "@SP").trim() || "@SP";
     const provLabel = stripMercamioProveedorLabel(
       String(row.proveedor_label ?? "(Sin proveedor)").trim() || "(Sin proveedor)",
     );
-    const existing = rowMap.get(itemId);
+    const existing = itemDrafts.get(itemId);
     if (existing) {
       existing.units += units;
       existing.sales += sales;
-      existing.cost += cost;
       existing.costoVenta += costoVenta;
       existing.proveedores.set(provId, provLabel);
     } else {
-      rowMap.set(itemId, {
+      itemDrafts.set(itemId, {
         id: itemId,
         label: String(row.item_descripcion ?? itemId).trim() || itemId,
         lineaId: String(row.id_linea1 ?? ""),
@@ -1008,7 +1025,7 @@ export const queryPreciosProveedorMatrix = async (
         proveedorCount: 1,
         units,
         sales,
-        cost,
+        cost: 0,
         costoVenta,
         pvu: 0,
         pcu: 0,
@@ -1018,12 +1035,46 @@ export const queryPreciosProveedorMatrix = async (
     }
   }
 
-  const rows = [...rowMap.values()]
+  const keepIds = new Set(
+    pickCostosMatrixItemIds(itemDrafts.values(), itemLimit),
+  );
+  const costoEntrada = await queryCostoEntradaMap(client, {
+    fromIso: input.fromIso,
+    toIso: input.toIso,
+    itemIds: [...keepIds],
+    columns,
+  });
+
+  const cells: PreciosProveedorCell[] = [];
+  const costByItem = new Map<string, number>();
+  for (const draft of cellDrafts) {
+    if (!keepIds.has(draft.rowId)) continue;
+    const pcu = costoEntrada.get(`${draft.rowId}::${draft.sedeKey}`) ?? 0;
+    const cost = draft.units > 0 && pcu > 0 ? draft.units * pcu : 0;
+    costByItem.set(draft.rowId, (costByItem.get(draft.rowId) ?? 0) + cost);
+    cells.push({
+      rowId: draft.rowId,
+      sedeKey: draft.sedeKey,
+      transito: 0,
+      units: draft.units,
+      sales: draft.sales,
+      cost,
+      costoVenta: draft.costoVenta,
+      pvu: draft.pvu,
+      pcu,
+      margenPct: marginPct(
+        draft.sales > 0 ? draft.sales : draft.pvu * draft.units,
+        cost,
+      ),
+    });
+  }
+
+  const rows = [...itemDrafts.values()]
+    .filter((row) => keepIds.has(row.id))
     .map((row) => {
-      // Ponderado por kilos entre sedes. Antes promediaba las sedes a peso
-      // igual: una sede que movio 5 kg valia lo mismo que una de 5.000.
+      const cost = costByItem.get(row.id) ?? 0;
       const pvu = unitPrice(row.sales, row.units);
-      const pcu = unitPrice(row.cost, row.units);
+      const pcu = unitPrice(cost, row.units);
       const proveedorCount = row.proveedores.size;
       const proveedorLabel =
         proveedorCount > 1
@@ -1041,22 +1092,19 @@ export const queryPreciosProveedorMatrix = async (
         proveedorCount,
         units: row.units,
         sales: row.sales,
-        cost: row.cost,
+        cost,
         costoVenta: row.costoVenta,
         pvu,
         pcu,
-        margenPct: marginPct(row.sales, row.cost),
+        margenPct: marginPct(row.sales, cost),
       };
     })
-    .sort((a, b) => b.sales - a.sales)
-    .slice(0, itemLimit);
-
-  const keepIds = new Set(rows.map((row) => row.id));
+    .sort((a, b) => b.sales - a.sales);
 
   return {
     columns,
     rows,
-    cells: cells.filter((cell) => keepIds.has(cell.rowId)),
+    cells,
     from: input.fromIso,
     to: input.toIso,
     itemLimit,
@@ -1071,11 +1119,74 @@ const ROTACION_SEDE_SQL = `
   END
 `;
 
-let costosSchemaCache: {
+type CostosSchema = {
   oc: boolean;
   rot: boolean;
   invOk: boolean;
-} | null = null;
+  proveedorItem: boolean;
+  proveedorTercero: boolean;
+};
+
+let costosSchemaCache: CostosSchema | null = null;
+
+async function ensureCostosSchema(client: PoolClient): Promise<CostosSchema> {
+  if (costosSchemaCache) return costosSchemaCache;
+  const result = await client.query<{
+    oc: boolean;
+    rot: boolean;
+    proveedor_item: boolean;
+    proveedor_tercero: boolean;
+    inv_ok: boolean;
+  }>(
+    `
+    SELECT
+      EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'orden_compra_linea'
+      ) AS oc,
+      EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'rotacion_salidas_dia'
+      ) AS rot,
+      EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'proveedor_item'
+      ) AS proveedor_item,
+      EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'proveedor_tercero'
+      ) AS proveedor_tercero,
+      (
+        SELECT COUNT(*)::int
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'rotacion_base_item_dia_sede'
+          AND column_name = ANY($1::text[])
+      ) = 5 AS inv_ok
+    `,
+    [["empresa", "sede", "id_item", "fecha_dia", "costo_uni_inventario"]],
+  );
+  const row = result.rows[0];
+  costosSchemaCache = {
+    oc: Boolean(row?.oc),
+    rot: Boolean(row?.rot),
+    invOk: Boolean(row?.inv_ok),
+    proveedorItem: Boolean(row?.proveedor_item),
+    proveedorTercero: Boolean(row?.proveedor_tercero),
+  };
+  return costosSchemaCache;
+}
+
+const catalogSedesAndEmpresas = () => {
+  const sedes = prototypeSedeColumns().map((col) => ({
+    key: col.key,
+    label: col.label,
+  }));
+  const empresas = [
+    ...new Set(prototypeSedeColumns().map((col) => col.empresa)),
+  ].map((id) => ({ id, label: empresaLabel(id) }));
+  return { sedes, empresas };
+};
 
 async function queryCostoEntradaMap(
   client: PoolClient,
@@ -1089,35 +1200,8 @@ async function queryCostoEntradaMap(
   const map = new Map<string, number>();
   if (input.itemIds.length === 0 || input.columns.length === 0) return map;
 
-  if (!costosSchemaCache) {
-    const cols = await client.query<{ column_name: string }>(
-      `
-      SELECT column_name
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = 'rotacion_base_item_dia_sede'
-        AND column_name = ANY($1::text[])
-      `,
-      [["empresa", "sede", "id_item", "fecha_dia", "costo_uni_inventario"]],
-    );
-    const tables = await client.query<{ oc: boolean; rot: boolean }>(`
-      SELECT
-        EXISTS (
-          SELECT 1 FROM information_schema.tables
-          WHERE table_schema = 'public' AND table_name = 'orden_compra_linea'
-        ) AS oc,
-        EXISTS (
-          SELECT 1 FROM information_schema.tables
-          WHERE table_schema = 'public' AND table_name = 'rotacion_salidas_dia'
-        ) AS rot
-    `);
-    costosSchemaCache = {
-      invOk: cols.rows.length === 5,
-      oc: Boolean(tables.rows[0]?.oc),
-      rot: Boolean(tables.rows[0]?.rot),
-    };
-  }
-  if (!costosSchemaCache.invOk) return map;
+  const schema = await ensureCostosSchema(client);
+  if (!schema.invOk) return map;
 
   const fromCompact = isoToCompact(input.fromIso);
   const toCompact = isoToCompact(input.toIso);
@@ -1135,8 +1219,8 @@ async function queryCostoEntradaMap(
     })
     .join(", ");
 
-  const ocExists = costosSchemaCache.oc;
-  const rotExists = costosSchemaCache.rot;
+  const ocExists = schema.oc;
+  const rotExists = schema.rot;
 
   const extraCtes: string[] = [];
   if (ocExists) {
@@ -1393,20 +1477,10 @@ export async function queryPreciosProveedorItemExpand(
     columns,
   });
 
-  const provCheck = await client.query<{ ok: boolean; tercero: boolean }>(`
-    SELECT
-      EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'proveedor_item'
-      ) AS ok,
-      EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'proveedor_tercero'
-      ) AS tercero
-  `);
+  const schema = await ensureCostosSchema(client);
   const provByItemEmpresa = new Map<string, ResolvedItemProveedor>();
-  if (provCheck.rows[0]?.ok && variantItemIds.length > 0) {
-    const hasTercero = Boolean(provCheck.rows[0]?.tercero);
+  if (schema.proveedorItem && variantItemIds.length > 0) {
+    const hasTercero = schema.proveedorTercero;
     const provRes = await client.query<{
       empresa: string;
       id_item: string;

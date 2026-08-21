@@ -6,6 +6,7 @@ import {
 import { canAccessPreciosProveedor } from "@/lib/shared/special-role-features";
 import { getDbPool } from "@/lib/db";
 import {
+  queryPreciosProveedorBounds,
   queryPreciosProveedorItemExpand,
   queryPreciosProveedorItemOptions,
   queryPreciosProveedorMatrix,
@@ -87,20 +88,25 @@ export async function GET(request: Request) {
     modeRaw === "matrix" ||
     modeRaw === "proveedores" ||
     modeRaw === "items" ||
-    modeRaw === "prev"
+    modeRaw === "prev" ||
+    modeRaw === "bounds"
       ? modeRaw
       : "meta";
 
   try {
+    if (mode === "bounds") {
+      const bounds = await queryPreciosProveedorBounds();
+      return withSession(NextResponse.json({ bounds }));
+    }
+    if (mode === "meta") {
+      const meta = await queryPreciosProveedorMeta();
+      return withSession(NextResponse.json({ meta }));
+    }
+
     const pool = await getDbPool();
     const client = await pool.connect();
     try {
       await client.query("SET LOCAL statement_timeout = '60s'");
-      if (mode === "meta") {
-        const meta = await queryPreciosProveedorMeta(client);
-        return withSession(NextResponse.json({ meta }));
-      }
-
       const from = url.searchParams.get("from");
       const to = url.searchParams.get("to");
       if (!isIsoDate(from) || !isIsoDate(to)) {
