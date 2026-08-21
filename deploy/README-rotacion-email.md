@@ -62,7 +62,6 @@ por ahora). Pensado para que gerencia vea si cada sede “funciona” y qué mej
 2. **Total cadena** — productos + inventario Manufactura D+0+S + restock agregado.
 3. **Comparativo** — Inventario · D · 0 · S (mismas cifras del individual).
 4. **Gestión** — Sin ver (ceros) · % surtido 0 · % surtido S · % pond. (0 y S por ítems) · **Foco**.
-5. **Manufactura** — # · inventario · días de inventario por sede.
 
 Las sedes salen del catálogo de rotación del rango por defecto. Sedes sin
 destinatario en el mapa individual igual entran al consolidado.

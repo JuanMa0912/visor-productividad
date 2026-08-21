@@ -5,7 +5,6 @@ import type {
 import {
   formatPrice,
   formatRangeLabel,
-  formatRotationOneDecimal,
   LINEA_N1_FAMILY_LABELS,
   NO_SALES_DI_VALUE,
 } from "@/app/rotacion/rotacion-preamble";
@@ -22,12 +21,6 @@ const formatPct = (value: number | null) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 1,
   })}%`;
-};
-
-const formatDiasInventario = (value: number | null) => {
-  if (value == null) return "—";
-  if (value >= NO_SALES_DI_VALUE) return "Sin venta";
-  return formatRotationOneDecimal(value);
 };
 
 const escapeHtml = (value: string) =>
@@ -267,30 +260,6 @@ const buildManagementRows = (digests: readonly RotacionCriticalDigest[]) =>
     })
     .join("");
 
-const buildManufacturaRows = (digests: readonly RotacionCriticalDigest[]) =>
-  digests
-    .map((digest, index) => {
-      const bg = index % 2 === 0 ? "#ffffff" : "#eff6ff";
-      const man = digest.manufactura;
-      return `<tr style="background:${bg};">
-        ${td(`<strong>${escapeHtml(digest.sedeName)}</strong>`)}
-        ${td(formatCount(man.total.itemCount), "right", "font-variant-numeric:tabular-nums;")}
-        ${td(
-          formatInventario(man.total.totalInventario),
-          "right",
-          "font-weight:700;color:#1d4ed8;font-variant-numeric:tabular-nums;",
-        )}
-        ${td(
-          formatDiasInventario(
-            man.demandaD.itemCount > 0 ? man.demandaD.diasInventario : null,
-          ),
-          "right",
-          "font-variant-numeric:tabular-nums;color:#be123c;",
-        )}
-      </tr>`;
-    })
-    .join("");
-
 export const buildRotacionCriticalDigestConsolidatedSubject = (
   digests: readonly RotacionCriticalDigest[],
 ) => {
@@ -436,26 +405,6 @@ export const buildRotacionCriticalDigestConsolidatedHtml = (
     </tr>
 
     <tr>
-      <td style="padding:14px 16px 6px;">
-        <div style="font-size:11px;font-weight:800;color:#0f172a;margin-bottom:4px;">3 · ${familyLabel}</div>
-        <div style="font-size:11px;color:#64748b;margin-bottom:8px;">Productos, inventario y días de inventario (Demanda D). Alcance: ${familyLabel}.</div>
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #bfdbfe;border-radius:10px;overflow:hidden;">
-          <thead>
-            <tr style="background:#eff6ff;">
-              ${th("Sede")}
-              ${th("#", "right")}
-              ${th("Inventario", "right")}
-              ${th("Días inv.", "right")}
-            </tr>
-          </thead>
-          <tbody>
-            ${buildManufacturaRows(digests)}
-          </tbody>
-        </table>
-      </td>
-    </tr>
-
-    <tr>
       <td style="padding:10px 16px 14px;border-top:1px solid #f1f5f9;font-size:10px;line-height:1.45;color:#94a3b8;">
         Automático · Visor. Solo ${familyLabel} (mismas reglas D+0+S que el correo de cada sede).
         Foco = alertas automáticas (restock &lt; 40, ceros sin verificar, poco % surtido, DI D alto).
@@ -496,12 +445,6 @@ export const buildRotacionCriticalDigestConsolidatedText = (
     ...digests.map((digest) => {
       const signals = buildSedeManagementSignals(digest);
       return `${digest.sedeName} | ${formatCount(signals.sinVerificarCero)} | ${formatPct(signals.surtidoPctCero)} | ${formatPct(signals.surtidoPctRestock)} | ${formatPct(signals.surtidoPctPonderado)} | ${signals.focusHints.join("; ")}`;
-    }),
-    "",
-    `3. ${familyLabel.toUpperCase()} | # | INV | DÍAS INV.`,
-    ...digests.map((digest) => {
-      const man = digest.manufactura;
-      return `${digest.sedeName} | ${formatCount(man.total.itemCount)} | ${formatInventario(man.total.totalInventario)} | ${formatDiasInventario(man.demandaD.itemCount > 0 ? man.demandaD.diasInventario : null)}`;
     }),
   ];
 

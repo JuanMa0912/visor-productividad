@@ -144,8 +144,9 @@ describe("critical-digest-consolidated-email", () => {
     assert.match(html, /Calle 5ta/);
     assert.match(html, /Floresta/);
     assert.match(html, /Manufactura/);
-    assert.match(html, /Días inv\./);
     assert.match(html, /% pond\./);
+    assert.doesNotMatch(html, /Días inv\./);
+    assert.doesNotMatch(html, /3 · /);
     assert.doesNotMatch(html, />Prod\.</);
     assert.doesNotMatch(html, />DI D</);
     assert.doesNotMatch(html, /Perec\./);
@@ -162,6 +163,7 @@ describe("critical-digest-consolidated-email", () => {
     assert.doesNotMatch(text, /\| P /);
     assert.doesNotMatch(text, /RESTOCK \| PROD/);
     assert.doesNotMatch(text, /DI D/);
+    assert.doesNotMatch(text, /DÍAS INV/);
   });
 
   it("genera focos de gestión cuando hay alertas", () => {
